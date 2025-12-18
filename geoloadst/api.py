@@ -171,6 +171,12 @@ class InstabilityAnalyzer:
             "coords_used": coords_subset,
         }
 
+        # Persist the active subset for downstream steps
+        self._active_bus_ids = bus_ids_arr
+        self._active_coords = coords_subset
+        self._active_bus_load_df = bus_load_df
+        self._active_values_std = self.values_std
+
         return self._stv_results
 
     def compute_directional_variograms(
@@ -259,24 +265,38 @@ class InstabilityAnalyzer:
             get_cluster_labels,
         )
 
+        # Use active subset if STV subsampled
+        bus_ids_active = getattr(self, "_active_bus_ids", self.bus_ids)
+        coords_active = getattr(self, "_active_coords", self.coords)
+        bus_load_df_active = getattr(self, "_active_bus_load_df", self.bus_load_df)
+
         # Ensure instability is computed
         if self.instability_index is None:
             from geoloadst.core.instability_index import rms_instability
             from geoloadst.core.preprocessing import detrend_and_standardize
 
             self.values_std = detrend_and_standardize(
-                self.bus_load_df,
-                self.coords,
+                bus_load_df_active,
+                coords_active,
                 dt_minutes=self.dt_minutes,
             )
             self.instability_index = rms_instability(self.values_std)
 
         # Build spatial weights
-        W = build_knn_weights(self.coords, k=k_neighbors)
+        W = build_knn_weights(coords_active, k=k_neighbors)
         self._spatial_weights = W
 
         # Mean load
-        mean_load = self.bus_load_df.mean(axis=0).values
+        mean_load = bus_load_df_active.loc[:, bus_ids_active].mean(axis=0).values
+
+        # Consistency checks
+        n_instab = len(self.instability_index)
+        if n_instab != len(coords_active) or n_instab != len(mean_load):
+            raise ValueError(
+                "Length mismatch between instability_index, coords, and mean_load. "
+                "Rerun compute_spatiotemporal_instability with desired max_buses/max_times "
+                "so downstream steps use the same subset."
+            )
 
         # Run Moran analysis
         moran_summary = moran_analysis_summary(
