@@ -91,18 +91,52 @@ class InstabilityAnalyzer:
         x_lags: int = 12,
         t_lags: int = 8,
         unstable_quantile: float = 0.9,
+        max_buses: int = 500,
+        max_times: int = 96,
+        max_pairs: int = 200_000,
+        random_state: int = 42,
     ) -> dict[str, Any]:
-        """Detrend/standardize loads, score instability, flag critical nodes, fit STV."""
+        """Detrend/standardize loads, score instability, flag critical nodes, fit STV.
+
+        Parameters
+        ----------
+        max_buses : int
+            If more buses are present, keep the highest-mean-load subset.
+        max_times : int
+            Trim time steps to this count.
+        max_pairs : int
+            Upper bound on pairwise distances (subsamples buses to respect this).
+        random_state : int
+            RNG seed for any subsampling.
+        """
         self._check_data_prepared()
 
         from geoloadst.core.preprocessing import detrend_and_standardize
         from geoloadst.core.instability_index import rms_instability, classify_critical_nodes
         from geoloadst.core.spatiotemporal import compute_stv
 
+        # Work on a bounded subset to avoid O(N^2) blowups
+        bus_load_df = self.bus_load_df
+        if max_times and len(bus_load_df) > max_times:
+            bus_load_df = bus_load_df.iloc[:max_times]
+
+        if max_buses and bus_load_df.shape[1] > max_buses:
+            mean_load = bus_load_df.mean(axis=0)
+            keep_buses = mean_load.sort_values(ascending=False).index[:max_buses]
+            bus_load_df = bus_load_df[keep_buses]
+            print(f"[geoloadst] Subsampled buses for STV: {self.bus_load_df.shape[1]} -> {len(keep_buses)}")
+        else:
+            keep_buses = bus_load_df.columns
+
+        # Align coords to kept buses
+        bus_ids_arr = np.array(keep_buses, dtype=int)
+        coords_map = {int(b): c for b, c in zip(self.bus_ids, self.coords)}
+        coords_subset = np.vstack([coords_map[int(b)] for b in bus_ids_arr])
+
         # Detrend and standardize
         self.values_std = detrend_and_standardize(
-            self.bus_load_df,
-            self.coords,
+            bus_load_df,
+            coords_subset,
             dt_minutes=self.dt_minutes,
         )
 
@@ -114,13 +148,15 @@ class InstabilityAnalyzer:
             self.instability_index, quantile=unstable_quantile
         )
 
-        # Compute space-time variogram
+        # Compute space-time variogram with pair budget
         stv_results = compute_stv(
-            self.coords,
+            coords_subset,
             self.values_std,
             dt_minutes=self.dt_minutes,
             x_lags=x_lags,
             t_lags=t_lags,
+            max_pairs=max_pairs,
+            random_state=random_state,
         )
 
         self._stv_results = {
@@ -128,9 +164,11 @@ class InstabilityAnalyzer:
             "instability_index": self.instability_index,
             "critical_mask": critical_mask,
             "critical_indices": critical_indices,
-            "critical_bus_ids": self.bus_ids[critical_indices],
+            "critical_bus_ids": bus_ids_arr[critical_indices],
             "threshold": threshold,
             "stv": stv_results,
+            "bus_ids_used": bus_ids_arr,
+            "coords_used": coords_subset,
         }
 
         return self._stv_results

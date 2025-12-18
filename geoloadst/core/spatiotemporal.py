@@ -15,13 +15,37 @@ def compute_stv(
     t_lags: int = 8,
     maxlag: str | float = "median",
     model: str = "product-sum",
+    max_pairs: int = 200_000,
+    random_state: int | None = 42,
 ) -> dict[str, Any]:
-    """Fit a SpaceTimeVariogram and return it plus spatial/temporal ranges."""
+    """Fit a SpaceTimeVariogram while keeping pairwise computations bounded."""
     from skgstat import SpaceTimeVariogram
 
+    # Bound the pair count by subsampling coordinates if necessary
+    n_points = coords.shape[0]
+    pair_budget = max_pairs
+    max_keep = n_points
+    if pair_budget is not None and pair_budget > 0:
+        # Solve k*(k-1)/2 <= pair_budget for k
+        k = int((1 + np.sqrt(1 + 8 * pair_budget)) // 2)
+        max_keep = min(n_points, max(2, k))
+
+    if max_keep < n_points:
+        rng = np.random.default_rng(random_state)
+        keep_idx = rng.choice(n_points, size=max_keep, replace=False)
+        coords_use = coords[keep_idx]
+        values_use = values_std[keep_idx]
+        print(
+            f"[geoloadst] Subsampled buses for STV: {n_points} -> {max_keep} "
+            f"(pair budget {max_pairs})"
+        )
+    else:
+        coords_use = coords
+        values_use = values_std
+
     stv = SpaceTimeVariogram(
-        coordinates=coords,
-        values=values_std,
+        coordinates=coords_use,
+        values=values_use,
         x_lags=x_lags,
         t_lags=t_lags,
         maxlag=maxlag,

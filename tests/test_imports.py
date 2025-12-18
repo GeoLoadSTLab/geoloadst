@@ -36,3 +36,23 @@ def test_imports():
     assert plot_moran_timeseries
     assert plot_network_topology and plot_lisa_clusters_map and plot_cluster_map
 
+
+def test_spatiotemporal_small_smoke():
+    import numpy as np
+    from geoloadst.core.spatiotemporal import compute_stv
+
+    coords = np.array([[0.0, 0.0], [1.0, 0.0], [0.5, 0.5]])
+    values = np.random.random((3, 12))
+
+    res = compute_stv(
+        coords,
+        values,
+        x_lags=2,
+        t_lags=2,
+        max_pairs=10,
+        random_state=0,
+    )
+
+    assert "stv" in res
+    assert res["space_range"] is not None
+

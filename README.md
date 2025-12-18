@@ -1,7 +1,4 @@
 # geoloadst
-A geospatial Python toolbox for analysing load instability and spatial autocorrelation in power distribution networks.
-=======
-
 **Spatial and spatio-temporal load instability analysis for distribution networks**
 
 `geoloadst` is a Python package for analyzing load instability patterns in power distribution networks using SimBench/pandapower. It provides tools for:
@@ -16,8 +13,8 @@ A geospatial Python toolbox for analysing load instability and spatial autocorre
 
 ```bash
 # Clone the repository
-git clone https://github.com/GeoLoadSTLab/geoloadst.git
-cd geoloadst
+git clone https://github.com/GeoLoadSTLab/geoloadst.git geoloadst-repo
+cd geoloadst-repo
 
 # Install in development mode
 pip install -e .
@@ -36,7 +33,63 @@ pip install -e ".[dev]"
 - `libpysal`, `esda` - Spatial statistics (Moran's I)
 - `networkx` - Graph/topology analysis
 
-## Quick Start
+## Quick Start (low-memory defaults)
+
+The examples below keep RAM low by limiting buses, timesteps, and pair counts.
+
+### A) Load and build a small bus load time series
+
+```python
+import simbench
+from geoloadst import InstabilityAnalyzer
+
+net = simbench.get_simbench_net("1-complete_data-mixed-all-1-sw")
+
+analyzer = InstabilityAnalyzer(
+    net,
+    roi=(10.8, 11.7, 53.1, 53.6),
+    time_window=(0, 96),   # keep to 1 day
+    dt_minutes=15.0,
+)
+
+analyzer.prepare_data()
+bus_load_df = analyzer.bus_load_df  # small ROI subset
+print(bus_load_df.shape)
+```
+
+### B) Moran + instability index (small subset)
+
+```python
+# Use defaults that down-sample if needed: max_buses=500, max_times=96
+stv_results = analyzer.compute_spatiotemporal_instability(
+    max_buses=200,
+    max_times=48,
+    max_pairs=50_000,   # bound pairwise work
+)
+
+print("Critical nodes:", len(stv_results["critical_bus_ids"]))
+
+multi_results = analyzer.compute_multidim_instability(n_clusters=3)
+moran_results = analyzer.compute_moran_analysis()
+
+print("Global Moran's I (instability):", moran_results["moran_instability"].I)
+```
+
+### C) Spatio-temporal variogram (RAM warning + controls)
+
+```python
+# Explicit controls to avoid O(N^2) distance matrices
+stv_results = analyzer.compute_spatiotemporal_instability(
+    x_lags=10,
+    t_lags=6,
+    max_buses=150,     # subsample buses
+    max_times=48,      # trim time steps
+    max_pairs=100_000, # cap pair count; subsamples automatically
+)
+
+print("Space range:", stv_results["stv"]["space_range"])
+print("Time range (hours):", stv_results["stv"]["time_range_hours"])
+```
 
 ```python
 import simbench
