@@ -103,5 +103,19 @@ def test_moran_after_subsampled_stv():
     moran_results = analyzer.compute_moran_analysis(k_neighbors=2, permutations=0)
 
     W = moran_results["weights"]
-    assert W.n == len(analyzer.instability_index)
+    n_act = len(analyzer.instability_index)
+    assert W.n == n_act
+    assert n_act == len(getattr(analyzer, "_active_bus_ids"))
+    assert n_act == len(getattr(analyzer, "_active_coords"))
+
+
+def test_public_imports_viz_maps():
+    from geoloadst.viz.maps import plot_lisa_clusters_map, plot_instability_overlay
+    assert plot_lisa_clusters_map
+    assert plot_instability_overlay
+
+
+def test_public_imports_io():
+    from geoloadst.io.simbench_adapter import load_simbench_network
+    assert load_simbench_network
 

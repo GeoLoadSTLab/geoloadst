@@ -189,10 +189,12 @@ class InstabilityAnalyzer:
         from geoloadst.core.spatiotemporal import compute_directional_variograms
 
         space_range = self._stv_results["stv"]["space_range"]
+        coords_active = getattr(self, "_active_coords", self.coords)
+        instab_active = self.instability_index
 
         dir_results = compute_directional_variograms(
-            self.coords,
-            self.instability_index,
+            coords_active,
+            instab_active,
             azimuths=azimuths,
             maxlag=space_range * 1.2 if not np.isnan(space_range) else None,
         )
@@ -213,19 +215,23 @@ class InstabilityAnalyzer:
             cluster_feature_summary,
         )
 
-        # Use detrended values if available, otherwise compute
-        if self.values_std is None:
+        bus_load_df_active = getattr(self, "_active_bus_load_df", self.bus_load_df)
+        coords_active = getattr(self, "_active_coords", self.coords)
+
+        # Use detrended values if available, otherwise compute on active subset
+        if self.values_std is None or getattr(self, "_active_values_std", None) is None:
             from geoloadst.core.preprocessing import detrend_and_standardize
             self.values_std = detrend_and_standardize(
-                self.bus_load_df,
-                self.coords,
+                bus_load_df_active,
+                coords_active,
                 dt_minutes=self.dt_minutes,
             )
+            self._active_values_std = self.values_std
 
         # Build features
         features, feature_names = build_instability_features(
-            self.bus_load_df,
-            values_detrended=self.values_std,
+            bus_load_df_active,
+            values_detrended=self._active_values_std,
         )
 
         # PCA and clustering

@@ -35,108 +35,73 @@ pip install -e ".[dev]"
 
 ## Quick Start
 
-The examples below default to low memory by trimming ROI, time window, and pair counts.
+The examples below default to small ROI/time windows and bounded pairs to stay memory-friendly.
 
-### Example 1 — Small ROI, short window, light metric + plot
+### Example 1 — Small ROI Moran + LISA map (plots)
 
 ```python
-import simbench
-from geoloadst import InstabilityAnalyzer
-from geoloadst.viz.plots import plot_instability_histogram
 import matplotlib.pyplot as plt
-
-net = simbench.get_simbench_net("1-complete_data-mixed-all-1-sw")
-
-analyzer = InstabilityAnalyzer(
-    net,
-    roi=(10.8, 11.7, 53.1, 53.6),  # small spatial window
-    time_window=(0, 48),           # first 12 hours at 15-min steps
-    dt_minutes=15.0,
-)
-
-analyzer.prepare_data()
-stv_results = analyzer.compute_spatiotemporal_instability(
-    max_buses=150,
-    max_times=48,
-    max_pairs=50_000,
-)
-
-fig = plot_instability_histogram(
-    stv_results["instability_index"],
-    threshold=stv_results["threshold"],
-    title="Instability (small ROI, short window)",
-)
-plt.show()
-```
-
-### Example 2 — Small ROI, short window, Moran/LISA + map
-
-```python
 import simbench
 from geoloadst import InstabilityAnalyzer
 from geoloadst.viz.maps import plot_lisa_clusters_map
-import matplotlib.pyplot as plt
 
 net = simbench.get_simbench_net("1-complete_data-mixed-all-1-sw")
-
-analyzer = InstabilityAnalyzer(
-    net,
-    roi=(10.8, 11.7, 53.1, 53.6),
-    time_window=(0, 48),
-    dt_minutes=15.0,
-)
-
+analyzer = InstabilityAnalyzer(net, roi=(10.8, 11.7, 53.1, 53.6), time_window=(0, 48), dt_minutes=15.0)
 analyzer.prepare_data()
-analyzer.compute_spatiotemporal_instability(
-    max_buses=150,
-    max_times=48,
-    max_pairs=50_000,
-)
-moran_results = analyzer.compute_moran_analysis()
+analyzer.compute_spatiotemporal_instability(max_buses=200, max_times=48, max_pairs=50_000)
+moran = analyzer.compute_moran_analysis(k_neighbors=8, permutations=99)
 
-fig = plot_lisa_clusters_map(
-    analyzer.bus_ids,
-    analyzer.coords,
-    moran_results["clusters_mean_load"],
+bus_ids = getattr(analyzer, "_active_bus_ids", analyzer.bus_ids)
+coords = getattr(analyzer, "_active_coords", analyzer.coords)
+
+fig, ax = plot_lisa_clusters_map(bus_ids, coords, moran["clusters_mean_load"], net=net, title="LISA clusters (mean load)")
+plt.show()
+```
+
+### Example 2 — Instability overlay with critical buses (plots)
+
+```python
+import matplotlib.pyplot as plt
+import simbench
+from geoloadst import InstabilityAnalyzer
+from geoloadst.viz.maps import plot_instability_overlay
+
+net = simbench.get_simbench_net("1-complete_data-mixed-all-1-sw")
+analyzer = InstabilityAnalyzer(net, roi=(10.8, 11.7, 53.1, 53.6), time_window=(0, 48), dt_minutes=15.0)
+analyzer.prepare_data()
+stv = analyzer.compute_spatiotemporal_instability(max_buses=200, max_times=48, max_pairs=50_000)
+
+fig, ax = plot_instability_overlay(
+    stv["bus_ids_used"],
+    stv["coords_used"],
+    stv["instability_index"],
+    stv["critical_mask"],
     net=net,
-    title="LISA clusters (small ROI)",
+    title="Critical buses (small ROI)",
 )
 plt.show()
 ```
 
-### Example 3 — Full pipeline (RAM warning) with knobs
+### Example 3 — Quick summary (minimal/no plotting)
 
 ```python
 import simbench
 from geoloadst import InstabilityAnalyzer
 
 net = simbench.get_simbench_net("1-complete_data-mixed-all-1-sw")
-
-analyzer = InstabilityAnalyzer(
-    net,
-    roi=(10.8, 11.7, 53.1, 53.6),  # shrink ROI for laptops
-    time_window=(0, 96),           # one day; reduce if memory is tight
-    dt_minutes=15.0,
-)
-
+analyzer = InstabilityAnalyzer(net, roi=(10.8, 11.7, 53.1, 53.6), time_window=(0, 24), dt_minutes=15.0)
 analyzer.prepare_data()
+stv = analyzer.compute_spatiotemporal_instability(max_buses=120, max_times=24, max_pairs=30_000)
 
-stv_results = analyzer.compute_spatiotemporal_instability(
-    x_lags=10,
-    t_lags=6,
-    max_buses=300,      # lower this to reduce RAM
-    max_times=96,       # lower for shorter windows
-    max_pairs=100_000,  # caps pairwise work; lower if still heavy
-)
+instab = stv["instability_index"]
+bus_ids = stv["bus_ids_used"]
+top = instab.argsort()[::-1][:10]
+print("Top 10 instability:")
+for i in top:
+    print(bus_ids[i], instab[i])
 
-multi_results = analyzer.compute_multidim_instability(n_clusters=3)
-moran_results = analyzer.compute_moran_analysis()
-scenario_results = analyzer.run_industrial_daynight_scenario()
-
-print("Space range:", stv_results["stv"]["space_range"])
-print("Time range (hours):", stv_results["stv"]["time_range_hours"])
-print("Global Moran's I (instability):", moran_results["moran_instability"].I)
-print("Industrial nodes:", scenario_results["scenario_data"]["industrial_mask"].sum())
+moran = analyzer.compute_moran_analysis(k_neighbors=6, permutations=0)
+print("Global Moran's I (mean load):", moran["moran_mean_load"].I)
 ```
 
 ```python

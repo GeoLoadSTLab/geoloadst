@@ -18,6 +18,7 @@ from geoloadst.viz.maps import (
     plot_feature_map,
     plot_industrial_cluster_map,
     plot_anisotropic_ellipses,
+    plot_instability_overlay,
 )
 
 __all__ = [
@@ -38,5 +39,6 @@ __all__ = [
     "plot_feature_map",
     "plot_industrial_cluster_map",
     "plot_anisotropic_ellipses",
+    "plot_instability_overlay",
 ]
 

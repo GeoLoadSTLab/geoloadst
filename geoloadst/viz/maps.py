@@ -63,39 +63,16 @@ def _create_lines_gdf(
 
 
 def plot_network_topology(
-    net: "pandapowerNet",
+    net: "pandapowerNet | None",
     bus_ids: np.ndarray,
     coords: np.ndarray,
     critical_mask: np.ndarray | None = None,
     ax: "Axes | None" = None,
-    title: str = "Network topology",
+    title: str | None = "Network topology",
     figsize: tuple[float, float] = (8, 6),
-) -> "Figure":
-    """
-    Plot network topology with buses and lines.
-
-    Parameters
-    ----------
-    net : pandapowerNet
-        The pandapower network.
-    bus_ids : np.ndarray
-        Array of bus IDs.
-    coords : np.ndarray
-        N×2 array of coordinates.
-    critical_mask : np.ndarray, optional
-        Boolean mask for critical nodes.
-    ax : Axes, optional
-        Matplotlib axes to plot on.
-    title : str
-        Plot title.
-    figsize : tuple
-        Figure size.
-
-    Returns
-    -------
-    Figure
-        Matplotlib figure.
-    """
+    show_lines: bool = True,
+) -> tuple["Figure", "Axes"]:
+    """Scatter buses and optionally draw straight-line edges from net.line."""
     if ax is None:
         fig, ax = plt.subplots(figsize=figsize)
     else:
@@ -103,14 +80,15 @@ def plot_network_topology(
 
     bus_to_coord = {int(bus_ids[i]): coords[i] for i in range(len(bus_ids))}
 
-    # Plot lines
-    for _, line in net.line.iterrows():
-        fb = int(line["from_bus"])
-        tb = int(line["to_bus"])
-        if fb in bus_to_coord and tb in bus_to_coord:
-            x1, y1 = bus_to_coord[fb]
-            x2, y2 = bus_to_coord[tb]
-            ax.plot([x1, x2], [y1, y2], color="lightgray", linewidth=0.7, zorder=1)
+    # Plot lines if requested and available
+    if show_lines and (net is not None) and hasattr(net, "line"):
+        for _, line in net.line.iterrows():
+            fb = int(line["from_bus"])
+            tb = int(line["to_bus"])
+            if fb in bus_to_coord and tb in bus_to_coord:
+                x1, y1 = bus_to_coord[fb]
+                x2, y2 = bus_to_coord[tb]
+                ax.plot([x1, x2], [y1, y2], color="lightgray", linewidth=0.7, zorder=1)
 
     # Plot all buses
     ax.scatter(
@@ -124,7 +102,7 @@ def plot_network_topology(
     )
 
     # Plot critical buses
-    if critical_mask is not None and critical_mask.any():
+    if critical_mask is not None and np.any(critical_mask):
         critical_coords = coords[critical_mask]
         ax.scatter(
             critical_coords[:, 0],
@@ -138,13 +116,14 @@ def plot_network_topology(
 
     ax.set_xlabel("X")
     ax.set_ylabel("Y")
-    ax.set_title(title)
+    if title:
+        ax.set_title(title)
     ax.legend()
     ax.axis("equal")
     ax.grid(True, alpha=0.3)
     plt.tight_layout()
 
-    return fig
+    return fig, ax
 
 
 def plot_critical_nodes_map(
@@ -216,7 +195,7 @@ def plot_critical_nodes_map(
     ax.axis("equal")
     plt.tight_layout()
 
-    return fig
+    return fig, ax
 
 
 def plot_lisa_clusters_map(
@@ -227,7 +206,8 @@ def plot_lisa_clusters_map(
     ax: "Axes | None" = None,
     title: str = "LISA clusters",
     figsize: tuple[float, float] = (8, 6),
-) -> "Figure":
+    show_lines: bool = True,
+) -> tuple["Figure", "Axes"]:
     """
     Plot LISA cluster map with standard color coding.
 
@@ -276,15 +256,19 @@ def plot_lisa_clusters_map(
         4: "#abd9e9",
     }
 
-    # Plot lines if network provided
-    if net is not None:
-        for _, line in net.line.iterrows():
-            fb = int(line["from_bus"])
-            tb = int(line["to_bus"])
-            if fb in bus_to_coord and tb in bus_to_coord:
-                x1, y1 = bus_to_coord[fb]
-                x2, y2 = bus_to_coord[tb]
-                ax.plot([x1, x2], [y1, y2], color="lightgray", linewidth=0.3, zorder=1)
+    # Plot base network
+    _, ax = plot_network_topology(
+        net,
+        bus_ids,
+        coords,
+        critical_mask=None,
+        ax=ax,
+        title=title,
+        show_lines=show_lines,
+    )
+    # Clear default legend to rebuild with clusters
+    if ax.get_legend():
+        ax.get_legend().remove()
 
     # Plot each cluster
     for code, label in cluster_labels.items():
@@ -303,13 +287,13 @@ def plot_lisa_clusters_map(
 
     ax.set_xlabel("X")
     ax.set_ylabel("Y")
-    ax.set_title(title)
-    ax.legend(title="LISA cluster", fontsize=8)
+    if not ax.get_legend():
+        ax.legend(title="LISA cluster", fontsize=8)
     ax.set_aspect("equal")
     ax.grid(True, alpha=0.3)
     plt.tight_layout()
 
-    return fig
+    return fig, ax
 
 
 def plot_cluster_map(
@@ -733,4 +717,67 @@ def plot_lisa_comparison(
 
     plt.tight_layout()
     return fig
+
+
+def plot_instability_overlay(
+    bus_ids: np.ndarray,
+    coords: np.ndarray,
+    instability: np.ndarray,
+    critical_mask: np.ndarray,
+    net: "pandapowerNet | None" = None,
+    ax: "Axes | None" = None,
+    title: str | None = "Instability overlay",
+    figsize: tuple[float, float] = (8, 6),
+) -> tuple["Figure", "Axes"]:
+    """Base map plus instability overlay highlighting critical buses."""
+    if ax is None:
+        fig, ax = plt.subplots(figsize=figsize)
+    else:
+        fig = ax.get_figure()
+
+    _, ax = plot_network_topology(
+        net,
+        bus_ids,
+        coords,
+        critical_mask=None,
+        ax=ax,
+        title=title,
+        show_lines=True,
+    )
+    if ax.get_legend():
+        ax.get_legend().remove()
+
+    sc = ax.scatter(
+        coords[:, 0],
+        coords[:, 1],
+        c=instability,
+        cmap="Reds",
+        s=20,
+        alpha=0.7,
+        edgecolors="none",
+        label="Instability",
+        zorder=2,
+    )
+    plt.colorbar(sc, ax=ax, label="Instability")
+
+    if critical_mask is not None and np.any(critical_mask):
+        ax.scatter(
+            coords[critical_mask, 0],
+            coords[critical_mask, 1],
+            s=70,
+            facecolors="none",
+            edgecolors="black",
+            linewidths=1.2,
+            label="Critical",
+            zorder=3,
+        )
+
+    if title:
+        ax.set_title(title)
+    ax.legend()
+    ax.set_aspect("equal")
+    ax.grid(True, alpha=0.3)
+    plt.tight_layout()
+
+    return fig, ax
 
