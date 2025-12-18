@@ -16,7 +16,7 @@ A geospatial Python toolbox for analysing load instability and spatial autocorre
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/geoloadst.git
+git clone https://github.com/GeoLoadSTLab/geoloadst.git
 cd geoloadst
 
 # Install in development mode
