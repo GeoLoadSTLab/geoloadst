@@ -33,11 +33,78 @@ pip install -e ".[dev]"
 - `libpysal`, `esda` - Spatial statistics (Moran's I)
 - `networkx` - Graph/topology analysis
 
-## Quick Start (low-memory defaults)
+## Quick Start
 
-The examples below keep RAM low by limiting buses, timesteps, and pair counts.
+The examples below default to low memory by trimming ROI, time window, and pair counts.
 
-### A) Load and build a small bus load time series
+### Example 1 — Small ROI, short window, light metric + plot
+
+```python
+import simbench
+from geoloadst import InstabilityAnalyzer
+from geoloadst.viz.plots import plot_instability_histogram
+import matplotlib.pyplot as plt
+
+net = simbench.get_simbench_net("1-complete_data-mixed-all-1-sw")
+
+analyzer = InstabilityAnalyzer(
+    net,
+    roi=(10.8, 11.7, 53.1, 53.6),  # small spatial window
+    time_window=(0, 48),           # first 12 hours at 15-min steps
+    dt_minutes=15.0,
+)
+
+analyzer.prepare_data()
+stv_results = analyzer.compute_spatiotemporal_instability(
+    max_buses=150,
+    max_times=48,
+    max_pairs=50_000,
+)
+
+fig = plot_instability_histogram(
+    stv_results["instability_index"],
+    threshold=stv_results["threshold"],
+    title="Instability (small ROI, short window)",
+)
+plt.show()
+```
+
+### Example 2 — Small ROI, short window, Moran/LISA + map
+
+```python
+import simbench
+from geoloadst import InstabilityAnalyzer
+from geoloadst.viz.maps import plot_lisa_clusters_map
+import matplotlib.pyplot as plt
+
+net = simbench.get_simbench_net("1-complete_data-mixed-all-1-sw")
+
+analyzer = InstabilityAnalyzer(
+    net,
+    roi=(10.8, 11.7, 53.1, 53.6),
+    time_window=(0, 48),
+    dt_minutes=15.0,
+)
+
+analyzer.prepare_data()
+analyzer.compute_spatiotemporal_instability(
+    max_buses=150,
+    max_times=48,
+    max_pairs=50_000,
+)
+moran_results = analyzer.compute_moran_analysis()
+
+fig = plot_lisa_clusters_map(
+    analyzer.bus_ids,
+    analyzer.coords,
+    moran_results["clusters_mean_load"],
+    net=net,
+    title="LISA clusters (small ROI)",
+)
+plt.show()
+```
+
+### Example 3 — Full pipeline (RAM warning) with knobs
 
 ```python
 import simbench
@@ -47,48 +114,29 @@ net = simbench.get_simbench_net("1-complete_data-mixed-all-1-sw")
 
 analyzer = InstabilityAnalyzer(
     net,
-    roi=(10.8, 11.7, 53.1, 53.6),
-    time_window=(0, 96),   # keep to 1 day
+    roi=(10.8, 11.7, 53.1, 53.6),  # shrink ROI for laptops
+    time_window=(0, 96),           # one day; reduce if memory is tight
     dt_minutes=15.0,
 )
 
 analyzer.prepare_data()
-bus_load_df = analyzer.bus_load_df  # small ROI subset
-print(bus_load_df.shape)
-```
 
-### B) Moran + instability index (small subset)
-
-```python
-# Use defaults that down-sample if needed: max_buses=500, max_times=96
-stv_results = analyzer.compute_spatiotemporal_instability(
-    max_buses=200,
-    max_times=48,
-    max_pairs=50_000,   # bound pairwise work
-)
-
-print("Critical nodes:", len(stv_results["critical_bus_ids"]))
-
-multi_results = analyzer.compute_multidim_instability(n_clusters=3)
-moran_results = analyzer.compute_moran_analysis()
-
-print("Global Moran's I (instability):", moran_results["moran_instability"].I)
-```
-
-### C) Spatio-temporal variogram (RAM warning + controls)
-
-```python
-# Explicit controls to avoid O(N^2) distance matrices
 stv_results = analyzer.compute_spatiotemporal_instability(
     x_lags=10,
     t_lags=6,
-    max_buses=150,     # subsample buses
-    max_times=48,      # trim time steps
-    max_pairs=100_000, # cap pair count; subsamples automatically
+    max_buses=300,      # lower this to reduce RAM
+    max_times=96,       # lower for shorter windows
+    max_pairs=100_000,  # caps pairwise work; lower if still heavy
 )
+
+multi_results = analyzer.compute_multidim_instability(n_clusters=3)
+moran_results = analyzer.compute_moran_analysis()
+scenario_results = analyzer.run_industrial_daynight_scenario()
 
 print("Space range:", stv_results["stv"]["space_range"])
 print("Time range (hours):", stv_results["stv"]["time_range_hours"])
+print("Global Moran's I (instability):", moran_results["moran_instability"].I)
+print("Industrial nodes:", scenario_results["scenario_data"]["industrial_mask"].sum())
 ```
 
 ```python
@@ -132,6 +180,31 @@ print(f"Industrial nodes: {scenario_results['scenario_data']['industrial_mask'].
 summary_df = analyzer.get_summary()
 print(summary_df.head())
 ```
+
+## Memory Notes / RAM Warning
+
+- Spatio-temporal variograms and pairwise distance computations can be heavy.
+- On laptops or limited RAM, shrink the spatial ROI (roi=(xmin, xmax, ymin, ymax)) and shorten the time window (time_window=(start, end)).
+- Use the STV knobs: max_buses, max_times, and max_pairs to bound work. Lower them if you still hit memory pressure.
+
+## Troubleshooting
+
+- Symptom: `geoloadst.__file__` is `None` and `geoloadst.__path__` shows `_NamespacePath(...)`. This usually means Python is picking up a folder that shadows the installed package (e.g., running Python from a parent directory named `geoloadst`).
+- Fix:
+  1) From the repo root (the one with `pyproject.toml`), run:
+     ```bash
+     python -m pip uninstall -y geoloadst
+     python -m pip install -e .
+     ```
+  2) Confirm install:
+     ```bash
+     python -c "import geoloadst; print(geoloadst.__file__)"`
+     ```
+  3) Restart the Jupyter kernel so it picks up the edited install.
+- Always import via the public API:
+  ```python
+  from geoloadst import InstabilityAnalyzer
+  ```
 
 ## Package Structure
 
