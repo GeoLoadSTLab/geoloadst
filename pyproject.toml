@@ -75,7 +75,8 @@ Repository = "https://github.com/yourusername/geoloadst"
 Issues = "https://github.com/yourusername/geoloadst/issues"
 
 [tool.setuptools.packages.find]
-include = ["geoloadst*"]
+where = ["."]
+include = ["geoloadst", "geoloadst.*"]
 
 [tool.black]
 line-length = 88
