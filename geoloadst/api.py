@@ -65,6 +65,7 @@ class InstabilityAnalyzer:
 
         # Extract all bus coordinates
         all_bus_ids, all_coords, all_bus_to_coord = extract_bus_coordinates(self.net)
+        total_with_coords = len(all_bus_ids)
 
         # Select ROI
         roi_bus_ids, roi_coords = select_roi_buses(
@@ -73,6 +74,17 @@ class InstabilityAnalyzer:
             roi=self.roi,
             roi_fraction=self.roi_fraction,
         )
+
+        if roi_bus_ids.size == 0:
+            roi_desc = (
+                f"roi={self.roi}" if self.roi is not None else f"roi_fraction={self.roi_fraction}"
+            )
+            raise ValueError(
+                "No buses found after ROI selection. "
+                f"{roi_desc}. "
+                f"Buses with valid coordinates: {total_with_coords}. "
+                "Enlarge the ROI or verify bus coordinate fields (bus_geodata or bus.geo)."
+            )
 
         # Build load time series
         max_times = self.time_window[1] - self.time_window[0]
@@ -97,6 +109,8 @@ class InstabilityAnalyzer:
         self._bus_ids_full = self.bus_ids.copy()
         self._coords_full = self.coords.copy()
         self._bus_load_df_full = self.bus_load_df.copy()
+
+        self._validate_prepared_state()
 
         return self
 
@@ -586,16 +600,40 @@ class InstabilityAnalyzer:
         self.bus_load_df = bus_load_df_aligned
 
     def _check_data_prepared(self) -> None:
-        """Check that prepare_data has been called."""
-        if self.bus_load_df is None:
-            raise RuntimeError(
-                "Data not prepared. Call prepare_data() first."
-            )
+        """Check that prepare_data has been called and state is valid."""
+        if self.bus_load_df is None or self.bus_ids is None or self.coords is None:
+            raise RuntimeError("Data not prepared. Call prepare_data() first.")
+        self._validate_prepared_state()
 
     def _check_instability_computed(self) -> None:
         """Check that instability has been computed."""
         if self._stv_results is None:
             raise RuntimeError(
                 "Instability not computed. Call compute_spatiotemporal_instability() first."
+            )
+
+    def _validate_prepared_state(self) -> None:
+        """Ensure prepared data are non-empty and consistent."""
+        if self.bus_ids is None or self.coords is None or self.bus_load_df is None:
+            raise RuntimeError("Data not prepared. Call prepare_data() first.")
+
+        if len(self.bus_ids) == 0 or self.coords.shape[0] == 0 or self.bus_load_df.shape[1] == 0:
+            roi_desc = (
+                f"roi={self.roi}" if self.roi is not None else f"roi_fraction={self.roi_fraction}"
+            )
+            raise ValueError(
+                "No buses available after preparation. "
+                f"{roi_desc}. "
+                "Enlarge the ROI or verify bus coordinate fields (bus_geodata or bus.geo)."
+            )
+
+        if self.coords.shape[0] != len(self.bus_ids):
+            raise ValueError(
+                f"coords length ({self.coords.shape[0]}) does not match bus_ids ({len(self.bus_ids)})."
+            )
+
+        if self.bus_load_df.shape[1] != len(self.bus_ids):
+            raise ValueError(
+                f"bus_load_df columns ({self.bus_load_df.shape[1]}) do not match bus_ids ({len(self.bus_ids)})."
             )
 

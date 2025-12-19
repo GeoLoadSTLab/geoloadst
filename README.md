@@ -48,6 +48,7 @@ from geoloadst.viz.maps import plot_lisa_clusters_map
 net = simbench.get_simbench_net("1-complete_data-mixed-all-1-sw")
 analyzer = InstabilityAnalyzer(net, roi=(10.8, 11.7, 53.1, 53.6), time_window=(0, 48), dt_minutes=15.0)
 analyzer.prepare_data()
+print(f"Buses selected in ROI: {len(analyzer.bus_ids)}")
 analyzer.compute_spatiotemporal_instability(max_buses=200, max_times=48, max_pairs=50_000)
 moran = analyzer.compute_moran_analysis(k_neighbors=8, permutations=99)
 

@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import pytest
 
 from geoloadst import InstabilityAnalyzer
 from geoloadst.viz.maps import plot_lisa_clusters_map
@@ -63,5 +64,26 @@ def test_active_subset_smoke():
     assert len(analyzer.bus_ids) == len(analyzer.coords) == 50
     assert len(moran["clusters_mean_load"]) == len(analyzer.coords)
     assert moran["weights"].n == 50
+
+
+def test_prepare_data_empty_roi_raises():
+    coords = np.array([[0.0, 0.0], [1.0, 1.0]])
+    bus_geo = pd.Series(
+        [json.dumps({"coordinates": [x, y]}) for x, y in coords],
+        index=np.arange(len(coords)),
+        name="geo",
+    )
+    bus_df = pd.DataFrame({"geo": bus_geo})
+    load_df = pd.DataFrame(
+        {"bus": np.arange(len(coords)), "profile": "p0_pload", "p_mw": 1.0},
+        index=np.arange(len(coords)),
+    )
+    profiles = pd.DataFrame({"p0_pload": np.ones(10)})
+    net = SimpleNamespace(bus=bus_df, load=load_df, profiles={"load": profiles})
+
+    analyzer = InstabilityAnalyzer(net, roi=(10, 11, 10, 11))
+    with pytest.raises(ValueError) as excinfo:
+        analyzer.prepare_data()
+    assert "No buses found after ROI selection" in str(excinfo.value)
 
 

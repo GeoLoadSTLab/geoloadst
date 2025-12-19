@@ -13,6 +13,20 @@ if TYPE_CHECKING:
     from pandapower import pandapowerNet
 
 
+def _coords_from_bus_geodata(net: "pandapowerNet") -> dict[int, np.ndarray]:
+    """Extract coordinates from net.bus_geodata if present."""
+    if not hasattr(net, "bus_geodata"):
+        return {}
+    geodf = net.bus_geodata
+    if geodf is None or len(geodf) == 0:
+        return {}
+    coords_map: dict[int, np.ndarray] = {}
+    if "x" in geodf.columns and "y" in geodf.columns:
+        for idx, row in geodf.iterrows():
+            coords_map[int(idx)] = np.array([row["x"], row["y"]], dtype=float)
+    return coords_map
+
+
 def load_simbench_network(code: str) -> "pandapowerNet":
     """Load a SimBench grid by code, erroring if load profiles are missing."""
     import simbench
@@ -51,15 +65,35 @@ def _extract_xy_from_geo(geo_str: str | None) -> list[float]:
 def extract_bus_coordinates(
     net: "pandapowerNet",
 ) -> tuple[np.ndarray, np.ndarray, dict[int, np.ndarray]]:
-    """Return bus IDs, coordinates, and a convenience mapping of bus→coord."""
-    bus_coords_series = net.bus["geo"].apply(_extract_xy_from_geo)
-    coords_all = np.vstack(bus_coords_series.values)
+    """Return bus IDs, coordinates, and a convenience mapping of bus→coord.
 
-    # Keep only buses with valid coordinates
-    valid_mask = ~np.isnan(coords_all).any(axis=1)
-    coords = coords_all[valid_mask, :]
-    bus_ids = net.bus.index[valid_mask].to_numpy()
+    Prefers net.bus_geodata when available; falls back to net.bus['geo'].
+    """
+    coords_map = _coords_from_bus_geodata(net)
 
+    # Fall back to geo column for buses missing in geodata
+    if "geo" in net.bus.columns:
+        bus_coords_series = net.bus["geo"].apply(_extract_xy_from_geo)
+        for bus_id, xy in zip(net.bus.index, bus_coords_series.values):
+            b_int = int(bus_id)
+            if b_int not in coords_map or np.isnan(coords_map[b_int]).any():
+                coords_map[b_int] = np.array(xy, dtype=float)
+
+    bus_ids_list: list[int] = []
+    coords_list: list[np.ndarray] = []
+    for bus_id in net.bus.index:
+        b_int = int(bus_id)
+        if b_int in coords_map:
+            xy = coords_map[b_int]
+            if not np.isnan(xy).any():
+                bus_ids_list.append(b_int)
+                coords_list.append(xy)
+
+    if not coords_list:
+        return np.array([], dtype=int), np.empty((0, 2), dtype=float), {}
+
+    bus_ids = np.array(bus_ids_list, dtype=int)
+    coords = np.vstack(coords_list)
     bus_to_coord = {int(b): coords[i] for i, b in enumerate(bus_ids)}
 
     return bus_ids, coords, bus_to_coord
