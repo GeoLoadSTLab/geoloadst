@@ -51,10 +51,13 @@ analyzer.prepare_data()
 analyzer.compute_spatiotemporal_instability(max_buses=200, max_times=48, max_pairs=50_000)
 moran = analyzer.compute_moran_analysis(k_neighbors=8, permutations=99)
 
-bus_ids = getattr(analyzer, "_active_bus_ids", analyzer.bus_ids)
-coords = getattr(analyzer, "_active_coords", analyzer.coords)
-
-fig, ax = plot_lisa_clusters_map(bus_ids, coords, moran["clusters_mean_load"], net=net, title="LISA clusters (mean load)")
+fig, ax = plot_lisa_clusters_map(
+    analyzer.bus_ids,
+    analyzer.coords,
+    moran["clusters_mean_load"],
+    net=net,
+    title="LISA clusters (mean load)",
+)
 plt.show()
 ```
 
@@ -138,6 +141,7 @@ plt.show()
 - Spatio-temporal variograms and pairwise distance computations can be heavy.
 - On laptops or limited RAM, shrink the spatial ROI (roi=(xmin, xmax, ymin, ymax)) and shorten the time window (time_window=(start, end)).
 - Use the STV knobs: max_buses, max_times, and max_pairs to bound work. Lower them if you still hit memory pressure.
+- When you set max_buses, the analyzer replaces bus_ids/coords/bus_load_df with the subsampled active subset (full ROI copies stay in _bus_ids_full/_coords_full/_bus_load_df_full). Run Moran/LISA/plots with analyzer.bus_ids and analyzer.coords to avoid dimension mismatches.
 
 ## Troubleshooting
 

@@ -42,6 +42,7 @@ def compute_stv(
     else:
         coords_use = coords
         values_use = values_std
+        keep_idx = None
 
     stv = SpaceTimeVariogram(
         coordinates=coords_use,
@@ -85,6 +86,7 @@ def compute_stv(
         "time_range_hours": time_range_hours,
         "x_marginal": Vx,
         "t_marginal": Vt,
+        "indices_used": keep_idx,
     }
 
 

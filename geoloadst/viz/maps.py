@@ -42,10 +42,15 @@ def _validate_bus_arrays(
                 continue
             arr_np = np.asarray(arr)
             if arr_np.shape[0] != n:
-                raise ValueError(
+                msg = (
                     f"Length mismatch for {name}: expected {n} entries to match bus_ids/coords, "
-                    f"but got {arr_np.shape[0]}. Use the same active subset (e.g., analyzer.bus_ids_active)."
+                    f"but got {arr_np.shape[0]}."
                 )
+                if name == "cluster_codes":
+                    msg += " Run instability/Moran on the same subset (e.g., analyzer.bus_ids/coords after max_buses)."
+                else:
+                    msg += " Use the same active subset (e.g., analyzer.bus_ids_active)."
+                raise ValueError(msg)
             validated_extra[name] = arr_np
 
     return bus_ids_arr, coords_arr, validated_extra

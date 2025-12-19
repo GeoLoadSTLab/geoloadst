@@ -53,6 +53,7 @@ class InstabilityAnalyzer:
         self._bus_ids_full: np.ndarray | None = None
         self._coords_full: np.ndarray | None = None
         self._bus_load_df_full: pd.DataFrame | None = None
+        self._subsample_idx: np.ndarray | None = None
 
     def prepare_data(self) -> "InstabilityAnalyzer":
         """Pull bus coords, apply ROI, and assemble per-bus load time series."""
@@ -572,6 +573,7 @@ class InstabilityAnalyzer:
         self._active_bus_idx = (
             np.asarray(active_idx, dtype=int) if active_idx is not None else np.arange(len(bus_ids_arr))
         )
+        self._subsample_idx = self._active_bus_idx
         if values_std is not None:
             self._active_values_std = values_std
 

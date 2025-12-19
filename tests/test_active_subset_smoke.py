@@ -51,7 +51,7 @@ def test_active_subset_smoke():
 
     analyzer.prepare_data()
     analyzer.compute_spatiotemporal_instability(
-        max_buses=150, max_times=48, max_pairs=50_000, random_state=0
+        max_buses=50, max_times=48, max_pairs=50_000, random_state=0
     )
     moran = analyzer.compute_moran_analysis(permutations=0)
 
@@ -60,7 +60,8 @@ def test_active_subset_smoke():
     )
     plt.close(fig)
 
-    assert len(analyzer.bus_ids) == len(analyzer.coords) == 150
-    assert moran["weights"].n == 150
+    assert len(analyzer.bus_ids) == len(analyzer.coords) == 50
+    assert len(moran["clusters_mean_load"]) == len(analyzer.coords)
+    assert moran["weights"].n == 50
 
 
