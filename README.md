@@ -88,26 +88,6 @@ plt.show()
 import simbench
 from geoloadst import InstabilityAnalyzer
 
-net = simbench.get_simbench_net("1-complete_data-mixed-all-1-sw")
-analyzer = InstabilityAnalyzer(net, roi=(10.8, 11.7, 53.1, 53.6), time_window=(0, 24), dt_minutes=15.0)
-analyzer.prepare_data()
-stv = analyzer.compute_spatiotemporal_instability(max_buses=120, max_times=24, max_pairs=30_000)
-
-instab = stv["instability_index"]
-bus_ids = stv["bus_ids_used"]
-top = instab.argsort()[::-1][:10]
-print("Top 10 instability:")
-for i in top:
-    print(bus_ids[i], instab[i])
-
-moran = analyzer.compute_moran_analysis(k_neighbors=6, permutations=0)
-print("Global Moran's I (mean load):", moran["moran_mean_load"].I)
-```
-
-```python
-import simbench
-from geoloadst import InstabilityAnalyzer
-
 # Load a SimBench network
 net = simbench.get_simbench_net("1-complete_data-mixed-all-1-sw")
 

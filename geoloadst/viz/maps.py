@@ -16,6 +16,41 @@ if TYPE_CHECKING:
     from pandapower import pandapowerNet
 
 
+def _validate_bus_arrays(
+    bus_ids: np.ndarray,
+    coords: np.ndarray,
+    extra: dict[str, np.ndarray] | None = None,
+) -> tuple[np.ndarray, np.ndarray, dict[str, np.ndarray]]:
+    """Validate that bus_ids/coords (and optional extras) share the same length."""
+    bus_ids_arr = np.asarray(bus_ids)
+    coords_arr = np.asarray(coords)
+
+    if coords_arr.ndim != 2 or coords_arr.shape[1] != 2:
+        raise ValueError(f"coords must have shape (N, 2); got {coords_arr.shape}.")
+
+    n = len(bus_ids_arr)
+    if coords_arr.shape[0] != n:
+        raise ValueError(
+            f"Length mismatch: bus_ids ({n}) and coords rows ({coords_arr.shape[0]}). "
+            "Pass arrays representing the same active subset of buses."
+        )
+
+    validated_extra: dict[str, np.ndarray] = {}
+    if extra:
+        for name, arr in extra.items():
+            if arr is None:
+                continue
+            arr_np = np.asarray(arr)
+            if arr_np.shape[0] != n:
+                raise ValueError(
+                    f"Length mismatch for {name}: expected {n} entries to match bus_ids/coords, "
+                    f"but got {arr_np.shape[0]}. Use the same active subset (e.g., analyzer.bus_ids_active)."
+                )
+            validated_extra[name] = arr_np
+
+    return bus_ids_arr, coords_arr, validated_extra
+
+
 def _create_bus_gdf(
     bus_ids: np.ndarray,
     coords: np.ndarray,
@@ -73,6 +108,10 @@ def plot_network_topology(
     show_lines: bool = True,
 ) -> tuple["Figure", "Axes"]:
     """Scatter buses and optionally draw straight-line edges from net.line."""
+    bus_ids, coords, _ = _validate_bus_arrays(
+        bus_ids, coords, {"critical_mask": critical_mask}
+    )
+
     if ax is None:
         fig, ax = plt.subplots(figsize=figsize)
     else:
@@ -160,6 +199,8 @@ def plot_critical_nodes_map(
     Figure
         Matplotlib figure.
     """
+    bus_ids, coords, _ = _validate_bus_arrays(bus_ids, coords)
+
     import geopandas as gpd
     from shapely.geometry import Point
 
@@ -173,7 +214,14 @@ def plot_critical_nodes_map(
     # Create GeoDataFrames
     bus_gdf = _create_bus_gdf(bus_ids, coords)
 
-    critical_coords = np.array([bus_to_coord[int(b)] for b in critical_bus_ids])
+    try:
+        critical_coords = np.array([bus_to_coord[int(b)] for b in critical_bus_ids])
+    except KeyError as exc:
+        missing = int(exc.args[0])
+        raise ValueError(
+            f"critical_bus_ids contains {missing} which is not present in bus_ids. "
+            "Pass critical ids from the same active subset."
+        ) from exc
     critical_gdf = _create_bus_gdf(critical_bus_ids, critical_coords)
 
     # Plot lines if network provided
@@ -233,6 +281,11 @@ def plot_lisa_clusters_map(
     Figure
         Matplotlib figure.
     """
+    bus_ids, coords, extras = _validate_bus_arrays(
+        bus_ids, coords, {"cluster_codes": cluster_codes}
+    )
+    cluster_codes = extras["cluster_codes"]
+
     if ax is None:
         fig, ax = plt.subplots(figsize=figsize)
     else:
@@ -333,6 +386,11 @@ def plot_cluster_map(
     Figure
         Matplotlib figure.
     """
+    bus_ids, coords, extras = _validate_bus_arrays(
+        bus_ids, coords, {"cluster_labels": cluster_labels}
+    )
+    cluster_labels = extras["cluster_labels"]
+
     import geopandas as gpd
     from shapely.geometry import Point
 
@@ -412,6 +470,11 @@ def plot_feature_map(
     Figure
         Matplotlib figure.
     """
+    bus_ids, coords, extras = _validate_bus_arrays(
+        bus_ids, coords, {"feature_values": feature_values}
+    )
+    feature_values = extras["feature_values"]
+
     import geopandas as gpd
 
     if ax is None:
@@ -666,6 +729,21 @@ def plot_lisa_comparison(
     Figure
         Matplotlib figure.
     """
+    coords_arr = np.asarray(coords)
+    clusters_base = np.asarray(clusters_base)
+    clusters_scenario = np.asarray(clusters_scenario)
+
+    if coords_arr.ndim != 2 or coords_arr.shape[1] != 2:
+        raise ValueError(f"coords must have shape (N, 2); got {coords_arr.shape}.")
+    n = coords_arr.shape[0]
+    if clusters_base.shape[0] != n or clusters_scenario.shape[0] != n:
+        raise ValueError(
+            "Length mismatch for coords and LISA cluster arrays. "
+            "Ensure both cluster vectors match coords rows."
+        )
+
+    coords = coords_arr
+
     fig, axes = plt.subplots(1, 2, figsize=figsize, sharex=True, sharey=True)
 
     cluster_names = {
@@ -730,6 +808,12 @@ def plot_instability_overlay(
     figsize: tuple[float, float] = (8, 6),
 ) -> tuple["Figure", "Axes"]:
     """Base map plus instability overlay highlighting critical buses."""
+    bus_ids, coords, extras = _validate_bus_arrays(
+        bus_ids, coords, {"instability": instability, "critical_mask": critical_mask}
+    )
+    instability = extras["instability"]
+    critical_mask = extras["critical_mask"]
+
     if ax is None:
         fig, ax = plt.subplots(figsize=figsize)
     else:

@@ -45,6 +45,14 @@ class InstabilityAnalyzer:
         self._scenario_results: dict | None = None
         self._topology_results: dict | None = None
         self._spatial_weights: Any = None
+        self._active_bus_idx: np.ndarray | None = None
+        self._active_bus_ids: np.ndarray | None = None
+        self._active_coords: np.ndarray | None = None
+        self._active_bus_load_df: pd.DataFrame | None = None
+        self._active_values_std: np.ndarray | None = None
+        self._bus_ids_full: np.ndarray | None = None
+        self._coords_full: np.ndarray | None = None
+        self._bus_load_df_full: pd.DataFrame | None = None
 
     def prepare_data(self) -> "InstabilityAnalyzer":
         """Pull bus coords, apply ROI, and assemble per-bus load time series."""
@@ -83,6 +91,11 @@ class InstabilityAnalyzer:
 
         # Reorder bus_load_df to match bus_ids order
         self.bus_load_df = bus_load_df[self.bus_ids]
+
+        # Persist the full (pre-subsampling) data for reference
+        self._bus_ids_full = self.bus_ids.copy()
+        self._coords_full = self.coords.copy()
+        self._bus_load_df_full = self.bus_load_df.copy()
 
         return self
 
@@ -128,10 +141,22 @@ class InstabilityAnalyzer:
         else:
             keep_buses = bus_load_df.columns
 
-        # Align coords to kept buses
+        # Align coords to kept buses and record indices within the full set
         bus_ids_arr = np.array(keep_buses, dtype=int)
-        coords_map = {int(b): c for b, c in zip(self.bus_ids, self.coords)}
-        coords_subset = np.vstack([coords_map[int(b)] for b in bus_ids_arr])
+        coords_source = self._coords_full if self._coords_full is not None else self.coords
+        bus_ids_source = self._bus_ids_full if self._bus_ids_full is not None else self.bus_ids
+        bus_id_to_idx = {int(b): i for i, b in enumerate(bus_ids_source)}
+
+        try:
+            active_idx = np.array([bus_id_to_idx[int(b)] for b in bus_ids_arr], dtype=int)
+        except KeyError as exc:
+            missing = int(exc.args[0])
+            raise ValueError(
+                f"Kept bus id {missing} not found in the prepared bus list. "
+                "Ensure prepare_data() was called before compute_spatiotemporal_instability()."
+            ) from exc
+
+        coords_subset = coords_source[active_idx]
 
         # Detrend and standardize
         self.values_std = detrend_and_standardize(
@@ -172,10 +197,13 @@ class InstabilityAnalyzer:
         }
 
         # Persist the active subset for downstream steps
-        self._active_bus_ids = bus_ids_arr
-        self._active_coords = coords_subset
-        self._active_bus_load_df = bus_load_df
-        self._active_values_std = self.values_std
+        self._set_active_subset(
+            bus_ids_subset=bus_ids_arr,
+            coords_subset=coords_subset,
+            bus_load_df_subset=bus_load_df,
+            active_idx=active_idx,
+            values_std=self.values_std,
+        )
 
         return self._stv_results
 
@@ -272,9 +300,30 @@ class InstabilityAnalyzer:
         )
 
         # Use active subset if STV subsampled
-        bus_ids_active = getattr(self, "_active_bus_ids", self.bus_ids)
-        coords_active = getattr(self, "_active_coords", self.coords)
-        bus_load_df_active = getattr(self, "_active_bus_load_df", self.bus_load_df)
+        bus_ids_active = self.bus_ids_active
+        coords_active = self.coords_active
+        bus_load_df_active = self.bus_load_df_active
+
+        n_active = len(bus_ids_active)
+        if coords_active is None or bus_load_df_active is None:
+            raise RuntimeError("Active subset not available. Call prepare_data() first.")
+        if coords_active.shape[0] != n_active:
+            raise ValueError(
+                f"coords length ({coords_active.shape[0]}) does not match bus_ids ({n_active}). "
+                "Downstream analyses require the same active subset."
+            )
+        if bus_load_df_active.shape[1] != n_active:
+            raise ValueError(
+                f"bus_load_df columns ({bus_load_df_active.shape[1]}) do not match bus_ids ({n_active}). "
+                "Rerun compute_spatiotemporal_instability so the active subset is synchronized."
+            )
+
+        missing_cols = set(bus_ids_active) - set(bus_load_df_active.columns)
+        if missing_cols:
+            raise ValueError(
+                f"bus_load_df is missing {len(missing_cols)} active buses; "
+                "rerun compute_spatiotemporal_instability to refresh the subset."
+            )
 
         # Ensure instability is computed
         if self.instability_index is None:
@@ -287,6 +336,14 @@ class InstabilityAnalyzer:
                 dt_minutes=self.dt_minutes,
             )
             self.instability_index = rms_instability(self.values_std)
+            self._active_values_std = self.values_std
+
+        if len(self.instability_index) != n_active:
+            raise ValueError(
+                "instability_index length does not match the active bus subset. "
+                "Rerun compute_spatiotemporal_instability with the desired limits so "
+                "Moran/LISA use the same buses."
+            )
 
         # Build spatial weights
         W = build_knn_weights(coords_active, k=k_neighbors)
@@ -426,10 +483,10 @@ class InstabilityAnalyzer:
         self._check_data_prepared()
 
         data = {
-            "bus_id": self.bus_ids,
-            "x": self.coords[:, 0],
-            "y": self.coords[:, 1],
-            "mean_load": self.bus_load_df.mean(axis=0).values,
+            "bus_id": self.bus_ids_active,
+            "x": self.coords_active[:, 0],
+            "y": self.coords_active[:, 1],
+            "mean_load": self.bus_load_df_active.mean(axis=0).values,
         }
 
         if self.instability_index is not None:
@@ -452,6 +509,79 @@ class InstabilityAnalyzer:
             data["betweenness"] = self._topology_results["metrics"]["betweenness"]
 
         return pd.DataFrame(data)
+
+    @property
+    def bus_ids_active(self) -> np.ndarray:
+        """Active bus IDs after any subsampling."""
+        if self._active_bus_ids is not None:
+            return self._active_bus_ids
+        return self.bus_ids
+
+    @property
+    def coords_active(self) -> np.ndarray:
+        """Active bus coordinates after any subsampling."""
+        if self._active_coords is not None:
+            return self._active_coords
+        return self.coords
+
+    @property
+    def bus_load_df_active(self) -> pd.DataFrame:
+        """Active bus load dataframe after any subsampling/time trimming."""
+        if self._active_bus_load_df is not None:
+            return self._active_bus_load_df
+        return self.bus_load_df
+
+    @property
+    def active_bus_indices(self) -> np.ndarray | None:
+        """Indices of active buses within the full prepared list."""
+        return self._active_bus_idx
+
+    def _set_active_subset(
+        self,
+        bus_ids_subset: np.ndarray,
+        coords_subset: np.ndarray,
+        bus_load_df_subset: pd.DataFrame,
+        active_idx: np.ndarray | None = None,
+        values_std: np.ndarray | None = None,
+    ) -> None:
+        """Persist and expose the currently active bus subset."""
+        if bus_ids_subset is None or coords_subset is None:
+            raise ValueError("bus_ids_subset and coords_subset are required to set the active subset.")
+
+        bus_ids_arr = np.asarray(bus_ids_subset, dtype=int)
+        coords_arr = np.asarray(coords_subset)
+
+        if coords_arr.shape[0] != len(bus_ids_arr):
+            raise ValueError(
+                f"Active coords length ({coords_arr.shape[0]}) does not match bus_ids ({len(bus_ids_arr)})."
+            )
+        if coords_arr.ndim != 2 or coords_arr.shape[1] != 2:
+            raise ValueError("coords_subset must be shaped (N, 2).")
+
+        try:
+            bus_load_df_aligned = bus_load_df_subset.loc[:, bus_ids_arr]
+        except KeyError as exc:
+            raise ValueError(
+                "bus_load_df_subset is missing buses from the active subset. "
+                "Ensure the dataframe columns align with bus_ids_subset."
+            ) from exc
+
+        self._active_bus_ids = bus_ids_arr
+        self._active_coords = coords_arr
+        self._active_bus_load_df = bus_load_df_aligned
+        self._active_bus_idx = (
+            np.asarray(active_idx, dtype=int) if active_idx is not None else np.arange(len(bus_ids_arr))
+        )
+        if values_std is not None:
+            self._active_values_std = values_std
+
+        # Keep mapping aligned to the active subset
+        self.bus_to_coord = {int(bus_ids_arr[i]): coords_arr[i] for i in range(len(bus_ids_arr))}
+
+        # Update public-facing attributes to reflect the active subset
+        self.bus_ids = bus_ids_arr
+        self.coords = coords_arr
+        self.bus_load_df = bus_load_df_aligned
 
     def _check_data_prepared(self) -> None:
         """Check that prepare_data has been called."""
