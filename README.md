@@ -86,44 +86,51 @@ plt.show()
 
 ```python
 import simbench
-from geoloadst import InstabilityAnalyzer
+import matplotlib.pyplot as plt
 
-# Load a SimBench network
+from geoloadst import InstabilityAnalyzer
+from geoloadst.viz.maps import plot_lisa_clusters_map, plot_network_topology
+from geoloadst.viz.plots import plot_instability_histogram
+
+# 1) Load network
 net = simbench.get_simbench_net("1-complete_data-mixed-all-1-sw")
 
-# Create analyzer with a spatial ROI
+# 2) Small ROI + short time window (low RAM)
 analyzer = InstabilityAnalyzer(
     net,
-    roi=(10.8, 11.7, 53.1, 53.6),  # x_min, x_max, y_min, y_max
-    time_window=(0, 96),            # 96 time steps = 24h at 15-min resolution
+    roi=(10.8, 11.7, 53.1, 53.6),
+    time_window=(0, 48),
     dt_minutes=15.0,
 )
-
-# Prepare data (extract coords, build load time series)
 analyzer.prepare_data()
 
-# Run spatio-temporal instability analysis
-stv_results = analyzer.compute_spatiotemporal_instability()
-print(f"Spatial correlation range: {stv_results['stv']['space_range']:.2f}")
-print(f"Temporal correlation range: {stv_results['stv']['time_range_hours']:.1f} hours")
-print(f"Critical nodes: {len(stv_results['critical_bus_ids'])}")
+# 3) Resource-safe instability (avoid huge pairwise matrices)
+analyzer.compute_spatiotemporal_instability(
+    max_buses=150,
+    max_times=48,
+    max_pairs=50_000,
+)
 
-# Multi-dimensional feature analysis with clustering
-multi_results = analyzer.compute_multidim_instability(n_clusters=3)
-print(f"PCA explained variance: {multi_results['pca_results']['cumulative_variance']:.1%}")
+# --- Plot A: Network (ROI) + Instability heat (RMS anomaly)
+fig = plot_network_topology(net=net, bus_ids=analyzer.bus_ids, coords=analyzer.coords, title="Network (ROI)")
+plt.show()
 
-# Moran's I spatial autocorrelation
-moran_results = analyzer.compute_moran_analysis()
-print(f"Global Moran's I (mean load): {moran_results['moran_mean_load'].I:.4f}")
-print(f"Global Moran's I (instability): {moran_results['moran_instability'].I:.4f}")
+# --- Plot B: Instability distribution
+plot_instability_histogram(analyzer.instability_index, quantile=0.9, title="Instability distribution (ROI buses)")
+plt.show()
 
-# Industrial day/night scenario
-scenario_results = analyzer.run_industrial_daynight_scenario()
-print(f"Industrial nodes: {scenario_results['scenario_data']['industrial_mask'].sum()}")
+# 4) Moran / LISA on the SAME subset (must match dimensions)
+moran = analyzer.compute_moran_analysis()
 
-# Get summary DataFrame
-summary_df = analyzer.get_summary()
-print(summary_df.head())
+# --- Plot C: LISA clusters (mean load) on top of network
+plot_lisa_clusters_map(
+    analyzer.bus_ids,
+    analyzer.coords,
+    moran["clusters_mean_load"],
+    net=net,
+    title="Network (ROI) + LISA clusters (Mean Load)",
+)
+plt.show()
 ```
 
 ## Memory Notes / RAM Warning
