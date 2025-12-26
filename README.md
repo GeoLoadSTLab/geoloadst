@@ -135,61 +135,88 @@ print(f"Top critical buses: {analyzer._stv_results['critical_bus_ids'][:5]}")
 > **Note**: This example requires optional dependencies: `pip install geopandas shapely contextily`
 
 ```python
-import numpy as np
-import matplotlib.pyplot as plt
 import simbench
+import matplotlib.pyplot as plt
+import geopandas as gpd
+from shapely.geometry import Point
+import contextily as ctx
 
 from geoloadst import InstabilityAnalyzer
 from geoloadst.viz.maps import plot_network_topology, plot_lisa_clusters_map
 from geoloadst.viz.plots import plot_instability_histogram
 
-# Load and analyze
+# 1) Load network
 net = simbench.get_simbench_net("1-complete_data-mixed-all-1-sw")
-analyzer = InstabilityAnalyzer(
-    net, roi=(10.8, 11.7, 53.1, 53.6), time_window=(0, 48), dt_minutes=15.0
-)
+
+# 2) Small ROI + short time window (low RAM)
+analyzer = InstabilityAnalyzer(net,roi=(10.8, 11.7, 53.1, 53.6),time_window=(0, 96),dt_minutes=15.0,)
 analyzer.prepare_data()
-analyzer.compute_spatiotemporal_instability(max_buses=150, max_times=48, max_pairs=50_000)
+
+# 3) Resource-safe instability
+analyzer.compute_spatiotemporal_instability(
+        max_buses=200,
+        max_times=48,
+        max_pairs=50_000,
+)
+
+# 4) Moran/LISA 
 moran = analyzer.compute_moran_analysis(k_neighbors=8)
 
 # Plot 1: Instability histogram
-plot_instability_histogram(analyzer.instability_index, quantile=0.9)
+plot_instability_histogram(analyzer.instability_index,quantile=0.9,title="Instability distribution (ROI buses)",)
 plt.show()
 
-# Plot 2: Network + Basemap + LISA overlay (requires geopandas, contextily)
-try:
-    import geopandas as gpd
-    from shapely.geometry import Point
-    import contextily as ctx
+# Plot 2: Network + Basemap + LISA overlay
+gdf = gpd.GeoDataFrame(
+    {"bus_id": analyzer.bus_ids},
+    geometry=[Point(xy) for xy in analyzer.coords],
+    crs="EPSG:4326",
+)
 
-    gdf = gpd.GeoDataFrame(
-        {"bus_id": analyzer.bus_ids},
-        geometry=[Point(xy) for xy in analyzer.coords],
-        crs="EPSG:4326",
-    )
-    gdf_3857 = gdf.to_crs(epsg=3857)
-    coords_3857 = np.column_stack([gdf_3857.geometry.x, gdf_3857.geometry.y])
+gdf_3857 = gdf.to_crs(epsg=3857)
 
-    fig, ax = plt.subplots(figsize=(12, 8))
-    xmin, ymin, xmax, ymax = gdf_3857.total_bounds
-    padx, pady = (xmax - xmin) * 0.05, (ymax - ymin) * 0.05
-    ax.set_xlim(xmin - padx, xmax + padx)
-    ax.set_ylim(ymin - pady, ymax + pady)
+coords_3857 = (
+    gdf_3857.geometry.x.to_numpy(),
+    gdf_3857.geometry.y.to_numpy(),
+)
+coords_3857 = list(zip(coords_3857[0], coords_3857[1]))  
+import numpy as np
+coords_3857 = np.asarray(coords_3857)
 
-    ctx.add_basemap(ax, source=ctx.providers.OpenStreetMap.Mapnik, zoom="auto")
-    plot_network_topology(net=net, bus_ids=analyzer.bus_ids, coords=coords_3857, ax=ax, title=None)
-    plot_lisa_clusters_map(
-        analyzer.bus_ids, coords_3857, moran["clusters_mean_load"],
-        net=None, ax=ax, title="LISA clusters + OSM", show_lines=False
-    )
-    ax.set_axis_off()
-    plt.tight_layout()
-    plt.show()
-except ImportError as e:
-    print(f"Basemap example skipped (missing dependency): {e}")
+fig, ax = plt.subplots(figsize=(12, 8))
+
+# 1) Basemap
+xmin, ymin, xmax, ymax = gdf_3857.total_bounds
+padx = (xmax - xmin) * 0.05
+pady = (ymax - ymin) * 0.05
+ax.set_xlim(xmin - padx, xmax + padx)
+ax.set_ylim(ymin - pady, ymax + pady)
+
+ctx.add_basemap(
+    ax,
+    source=ctx.providers.OpenStreetMap.Mapnik,
+    zoom="auto",
+)
+
+# 2)  (Topology)  basemap
+plot_network_topology(net=net,bus_ids=analyzer.bus_ids,coords=coords_3857,ax=ax,title="Network (ROI) + LISA clusters (Mean Load) + OSM",)
+
+# 3) LISA clusters overlay 
+plot_lisa_clusters_map(analyzer.bus_ids,coords_3857,moran["clusters_mean_load"],net=None,ax=ax,title=None,show_lines=False,)
+
+# 4) Legend 
+handles, labels = ax.get_legend_handles_labels()
+if handles:
+    ax.legend(handles, labels, title="LISA cluster",fontsize=14,title_fontsize=15,markerscale=1.8,framealpha=1,loc="upper right",)
+
+ax.set_axis_off()
+plt.tight_layout()
+plt.show()
+
 ```
 
 - Result:
+![LISA clusters example](docs/images/ROI.png)
 ![LISA clusters example](docs/images/LISA.png)
 
 ## Memory Notes / RAM Warning
