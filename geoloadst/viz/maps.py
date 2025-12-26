@@ -171,30 +171,38 @@ def plot_network_topology(
 
 
 def plot_topology_with_critical_buses(
-    analyzer: Any,
+    analyzer: Any | None = None,
     title: str | None = "Network topology with critical buses",
     node_size: float = 25,
     critical_size: float = 90,
     linewidth: float = 0.8,
     ax: "Axes | None" = None,
+    net: Any | None = None,
+    bus_ids: np.ndarray | None = None,
+    coords: np.ndarray | None = None,
+    critical_mask: np.ndarray | None = None,
 ) -> tuple["Figure", "Axes"]:
-    """Convenience wrapper to plot topology highlighting critical buses."""
-    if analyzer is None:
-        raise ValueError("analyzer is required for plot_topology_with_critical_buses.")
+    """Plot topology highlighting critical buses (analyzer or explicit args)."""
+    # Normalize arguments
+    if analyzer is not None:
+        net = getattr(analyzer, "net", net)
+        bus_ids = getattr(analyzer, "bus_ids_active", getattr(analyzer, "bus_ids", bus_ids))
+        coords = getattr(analyzer, "coords_active", getattr(analyzer, "coords", coords))
+        if critical_mask is None:
+            critical_mask = getattr(analyzer, "critical_mask", None)
+        critical_bus_ids = getattr(analyzer, "critical_bus_ids", None)
+        if critical_mask is None and hasattr(analyzer, "_stv_results") and analyzer._stv_results is not None:
+            critical_mask = analyzer._stv_results.get("critical_mask")
+            critical_bus_ids = analyzer._stv_results.get("critical_bus_ids")
+        if critical_mask is None and critical_bus_ids is not None:
+            if bus_ids is not None:
+                critical_mask = np.isin(bus_ids, critical_bus_ids)
+    else:
+        critical_bus_ids = None
 
-    net = getattr(analyzer, "net", None)
-    bus_ids = getattr(analyzer, "bus_ids_active", getattr(analyzer, "bus_ids", None))
-    coords = getattr(analyzer, "coords_active", getattr(analyzer, "coords", None))
-    critical_mask = getattr(analyzer, "critical_mask", None)
-    critical_bus_ids = getattr(analyzer, "critical_bus_ids", None)
-    if critical_mask is None and hasattr(analyzer, "_stv_results") and analyzer._stv_results is not None:
-        critical_mask = analyzer._stv_results.get("critical_mask")
-        critical_bus_ids = analyzer._stv_results.get("critical_bus_ids")
-    if critical_mask is None:
-        instab = getattr(analyzer, "instability_index", None)
-        if instab is not None:
-            threshold = np.quantile(instab, 0.9)
-            critical_mask = instab >= threshold
+    if bus_ids is None or coords is None:
+        raise ValueError("bus_ids and coords are required (either via analyzer or explicitly).")
+
     bus_ids, coords, extras = _validate_bus_arrays(bus_ids, coords, {"critical_mask": critical_mask})
     critical_mask = extras.get("critical_mask")
     if critical_mask is None and critical_bus_ids is not None:

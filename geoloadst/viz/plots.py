@@ -224,29 +224,30 @@ def plot_directional_variograms(
     return fig
 
 
-def plot_polar_ranges(
+def _plot_directional_ranges_polar_core(
     dir_results: dict[str, Any] | dict[int | float, float],
     ax: "Axes | None" = None,
-    title: str = "Directional instability radius",
+    title: str = "Directional ranges (polar)",
     fontsize: int | None = None,
     labelsize: int | None = None,
     ticksize: int | None = None,
     color: str = "steelblue",
     fill_alpha: float = 0.3,
-    **kwargs: Any,
 ) -> "Figure":
-    """Polar plot of directional ranges with optional sizing controls."""
+    """Core polar plot implementation to avoid recursive wrappers."""
+    ranges = dir_results["ranges"] if isinstance(dir_results, dict) and "ranges" in dir_results else dir_results
+    if not ranges:
+        raise ValueError("ranges dict is empty; cannot plot polar diagram.")
+
     if ax is None:
         fig = plt.figure(figsize=(5, 5))
         ax = fig.add_subplot(111, polar=True)
     else:
         fig = ax.get_figure()
 
-    ranges = dir_results["ranges"] if isinstance(dir_results, dict) and "ranges" in dir_results else dir_results
     angles_rad = np.deg2rad(list(ranges.keys()))
     values = np.array(list(ranges.values()))
 
-    # Close the polygon
     angles_rad_closed = np.append(angles_rad, angles_rad[0])
     values_closed = np.append(values, values[0])
 
@@ -261,7 +262,6 @@ def plot_polar_ranges(
     if ticksize is not None:
         ax.tick_params(axis="both", labelsize=ticksize)
     plt.tight_layout()
-
     return fig
 
 
@@ -274,14 +274,40 @@ def plot_directional_ranges_polar(
     ax: "Axes | None" = None,
     **kwargs: Any,
 ) -> "Figure":
-    """Alias of plot_polar_ranges with font sizing controls."""
-    return plot_polar_ranges(
+    """Public wrapper for polar ranges plot."""
+    return _plot_directional_ranges_polar_core(
         dir_results,
         ax=ax,
         title=title,
         fontsize=fontsize,
         labelsize=labelsize,
         ticksize=ticksize,
+        **kwargs,
+    )
+
+
+def plot_polar_ranges(
+    dir_results: dict[str, Any] | dict[int | float, float],
+    ax: "Axes | None" = None,
+    title: str = "Directional instability radius",
+    fontsize: int | None = None,
+    labelsize: int | None = None,
+    ticksize: int | None = None,
+    color: str = "steelblue",
+    fill_alpha: float = 0.3,
+    **kwargs: Any,
+) -> "Figure":
+    """Backward-compatible alias to polar ranges plot."""
+    return _plot_directional_ranges_polar_core(
+        dir_results,
+        ax=ax,
+        title=title,
+        fontsize=fontsize,
+        labelsize=labelsize,
+        ticksize=ticksize,
+        color=color,
+        fill_alpha=fill_alpha,
+        **kwargs,
     )
 
 
