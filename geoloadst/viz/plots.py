@@ -22,6 +22,10 @@ def plot_instability_histogram(
     ax: "Axes | None" = None,
     threshold: float | None = None,
     quantile: float = 0.9,
+    fontsize: int | None = None,
+    labelsize: int | None = None,
+    ticksize: int | None = None,
+    legend_fontsize: int | None = None,
     **kwargs: Any,
 ) -> "Figure":
     """Histogram of instability with optional percentile marker."""
@@ -56,9 +60,13 @@ def plot_instability_histogram(
         )
         ax.legend()
 
-    ax.set_title(title)
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel(ylabel)
+    ax.set_title(title, fontsize=fontsize)
+    ax.set_xlabel(xlabel, fontsize=labelsize)
+    ax.set_ylabel(ylabel, fontsize=labelsize)
+    if ticksize is not None:
+        ax.tick_params(axis="both", labelsize=ticksize)
+    if legend_fontsize is not None and ax.get_legend():
+        ax.get_legend().set_fontsize(legend_fontsize)
     ax.grid(True, alpha=0.3)
     plt.tight_layout()
 
@@ -120,6 +128,8 @@ def plot_st_marginals(
     time_range_hours: float,
     ax: tuple["Axes", "Axes"] | None = None,
     figsize: tuple[float, float] = (12, 5),
+    title: str | None = None,
+    **kwargs: Any,
 ) -> "Figure":
     """Plot spatial and temporal marginal variograms with range markers."""
     if ax is None:
@@ -153,8 +163,32 @@ def plot_st_marginals(
     axs[1].grid(True, alpha=0.3)
     axs[1].legend()
 
+    if title:
+        fig.suptitle(title)
     plt.tight_layout()
     return fig
+
+
+def plot_polar_ranges(
+    dir_results: dict[str, Any] | dict[int | float, float],
+    ax: "Axes | None" = None,
+    title: str = "Directional instability radius",
+    fontsize: int | None = None,
+    labelsize: int | None = None,
+    ticksize: int | None = None,
+    color: str = "steelblue",
+    fill_alpha: float = 0.3,
+    **kwargs: Any,
+) -> "Figure":
+    """Alias for backward compatibility; forwards to plot_directional_ranges_polar."""
+    return plot_directional_ranges_polar(
+        dir_results,
+        ax=ax,
+        title=title,
+        fontsize=fontsize,
+        labelsize=labelsize,
+        ticksize=ticksize,
+    )
 
 
 def plot_directional_variograms(
@@ -165,6 +199,9 @@ def plot_directional_variograms(
     labelsize: int | None = None,
     ticksize: int | None = None,
     legend_fontsize: int | None = None,
+    xlabel: str = "Spatial lag",
+    ylabel: str = "Semivariance",
+    **kwargs: Any,
 ) -> "Figure":
     """Directional variograms for each azimuth provided."""
     if ax is None:
@@ -176,8 +213,8 @@ def plot_directional_variograms(
         ax.plot(DV.bins, DV.experimental, marker="o", linestyle="-", label=f"{az}°")
 
     ax.set_title(title, fontsize=fontsize)
-    ax.set_xlabel("Spatial lag", fontsize=labelsize)
-    ax.set_ylabel("Semivariance", fontsize=labelsize)
+    ax.set_xlabel(xlabel, fontsize=labelsize)
+    ax.set_ylabel(ylabel, fontsize=labelsize)
     ax.grid(True, alpha=0.3)
     ax.legend(title="Azimuth", fontsize=legend_fontsize, title_fontsize=legend_fontsize)
     if ticksize is not None:
@@ -196,6 +233,7 @@ def plot_polar_ranges(
     ticksize: int | None = None,
     color: str = "steelblue",
     fill_alpha: float = 0.3,
+    **kwargs: Any,
 ) -> "Figure":
     """Polar plot of directional ranges with optional sizing controls."""
     if ax is None:
@@ -234,6 +272,7 @@ def plot_directional_ranges_polar(
     labelsize: int | None = None,
     ticksize: int | None = None,
     ax: "Axes | None" = None,
+    **kwargs: Any,
 ) -> "Figure":
     """Alias of plot_polar_ranges with font sizing controls."""
     return plot_polar_ranges(

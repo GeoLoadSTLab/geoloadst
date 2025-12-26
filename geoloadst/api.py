@@ -226,6 +226,14 @@ class InstabilityAnalyzer:
             values_std=self.values_std,
         )
 
+        # Add aliases for backward compatibility
+        self._stv_results["q_thr"] = threshold
+        stv_dict = self._stv_results.get("stv", {})
+        if isinstance(stv_dict, dict):
+            if "x_marginal" in stv_dict:
+                stv_dict["Vx"] = stv_dict.get("x_marginal")
+            if "t_marginal" in stv_dict:
+                stv_dict["Vt"] = stv_dict.get("t_marginal")
         return self._stv_results
 
     def compute_directional_variograms(
@@ -237,8 +245,9 @@ class InstabilityAnalyzer:
         n_lags: int = 8,
         maxlag: float | None = None,
         model: str = "spherical",
+        **_: Any,
     ) -> dict[str, Any]:
-        """Directional variograms for anisotropy; backward-compatible signature."""
+        """Directional variograms with backward-compatible signature."""
         from geoloadst.core.spatiotemporal import compute_directional_variograms
 
         coords_active = getattr(self, "coords_active", self.coords)
@@ -268,11 +277,17 @@ class InstabilityAnalyzer:
             model=model,
         )
 
+        ranges = dir_results.get("ranges", {})
         result = {
             "variograms": dir_results.get("variograms", {}),
-            "ranges": dir_results.get("ranges", {}),
+            "ranges": ranges,
+            "ranges_by_azimuth": ranges,
+            "major_azimuth": dir_results.get("major_azimuth"),
+            "minor_azimuth": dir_results.get("minor_azimuth"),
+            "a_global": dir_results.get("semi_major", np.nan),
+            "b_global": dir_results.get("semi_minor", np.nan),
+            "angle_global": dir_results.get("angle", 0.0),
         }
-        # cache for downstream plotting helpers
         self._directional_results = result
         return result
 
@@ -443,6 +458,50 @@ class InstabilityAnalyzer:
             "critical_gdf": critical_gdf,
         }
         return output
+
+    def compute_local_anisotropy(
+        self,
+        max_crit_local: int = 5,
+        k_local: int = 40,
+        azimuths: tuple[int, ...] = (0, 90),
+        tolerance_deg: float = 30.0,
+        n_lags: int = 5,
+        model: str = "spherical",
+    ) -> dict[str, Any]:
+        """Compute local anisotropy around top critical nodes."""
+        from geoloadst.core.spatiotemporal import compute_local_variograms
+
+        n = len(self.coords_active)
+        local_iso = np.full(n, np.nan)
+        local_a = np.full(n, np.nan)
+        local_b = np.full(n, np.nan)
+        local_angle = np.full(n, np.nan)
+
+        crit_mask = getattr(self, "critical_mask", None)
+        crit_indices = np.where(crit_mask)[0] if crit_mask is not None else np.arange(min(max_crit_local, n))
+
+        for idx in crit_indices[:max_crit_local]:
+            res_local = compute_local_variograms(
+                self.coords_active,
+                self.instability_index,
+                center_idx=idx,
+                k_neighbors=k_local,
+                n_lags=n_lags,
+                model=model,
+            )
+            local_iso[idx] = res_local.get("iso_range", np.nan)
+            local_a[idx] = res_local.get("local_major", np.nan)
+            local_b[idx] = res_local.get("local_minor", np.nan)
+            local_angle[idx] = res_local.get("local_angle", np.nan)
+
+        self.local_anisotropy_results = {
+            "local_iso": local_iso,
+            "local_a": local_a,
+            "local_b": local_b,
+            "local_angle": local_angle,
+        }
+        self.local_anisotropy = self.local_anisotropy_results
+        return self.local_anisotropy_results
 
     def compute_multidim_instability(
         self,
