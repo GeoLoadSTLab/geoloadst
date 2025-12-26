@@ -225,7 +225,7 @@ plt.show()
 
 - Result:
 
-![LISA clusters example](docs/images/LISA.png)
+![LISA clusters example](docs/images/ROI.png)
 
 ## Memory Notes / RAM Warning
 
