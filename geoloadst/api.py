@@ -232,38 +232,10 @@ class InstabilityAnalyzer:
         model: str = "spherical",
         azimuths: list[int] | None = None,
     ) -> dict[str, Any]:
-        """Directional variograms for anisotropy; returns ranges and ellipse params.
+        """Directional variograms for anisotropy (backward compatible signature).
 
-        Parameters
-        ----------
-        values : np.ndarray, optional
-            Values to compute variograms for. If None, uses self.instability_index.
-            Must have same length as active coords if provided.
-        angles_deg : tuple or list, optional
-            Azimuth angles in degrees. Default is (0, 45, 90, 135).
-        tolerance_deg : float, optional
-            Angular tolerance in degrees for each direction. Default is 22.5.
-        n_lags : int, optional
-            Number of lag bins for the variogram. Default is 8.
-        maxlag : float, optional
-            Maximum lag distance. If None, auto-computed from STV or median distance.
-        model : str, optional
-            Variogram model type. Default is "spherical".
-        azimuths : list[int], optional
-            Deprecated alias for angles_deg. If provided, overrides angles_deg.
-
-        Returns
-        -------
-        dict
-            {"variograms": dict[azimuth -> DirectionalVariogram],
-             "ranges": dict[azimuth -> float],
-             "major_axis_azimuth": int, "minor_axis_azimuth": int,
-             "a": float (semi-major), "b": float (semi-minor)}
-
-        Raises
-        ------
-        ValueError
-            If values is None and instability_index has not been computed.
+        Accepts both the legacy `azimuths` argument and the richer signature
+        with angles, tolerance, n_lags, maxlag, and model.
         """
         from geoloadst.core.spatiotemporal import compute_directional_variograms
 
@@ -302,20 +274,27 @@ class InstabilityAnalyzer:
             model=model,
         )
 
-        return {
+        # Core shape expected by plotting helpers
+        result = {
+            "angles_deg": angles,
             "variograms": dir_results.get("variograms", {}),
             "ranges": dir_results.get("ranges", {}),
-            "major_axis_azimuth": dir_results.get("major_azimuth"),
-            "minor_axis_azimuth": dir_results.get("minor_azimuth"),
-            "a": dir_results.get("semi_major", np.nan),
-            "b": dir_results.get("semi_minor", np.nan),
-            # Keep old keys for backward compatibility
-            "major_azimuth": dir_results.get("major_azimuth"),
-            "minor_azimuth": dir_results.get("minor_azimuth"),
-            "semi_major": dir_results.get("semi_major", np.nan),
-            "semi_minor": dir_results.get("semi_minor", np.nan),
-            "angle": dir_results.get("angle", 0.0),
         }
+        # Preserve legacy keys for compatibility with older callers
+        result.update(
+            {
+                "major_axis_azimuth": dir_results.get("major_azimuth"),
+                "minor_axis_azimuth": dir_results.get("minor_azimuth"),
+                "a": dir_results.get("semi_major", np.nan),
+                "b": dir_results.get("semi_minor", np.nan),
+                "major_azimuth": dir_results.get("major_azimuth"),
+                "minor_azimuth": dir_results.get("minor_azimuth"),
+                "semi_major": dir_results.get("semi_major", np.nan),
+                "semi_minor": dir_results.get("semi_minor", np.nan),
+                "angle": dir_results.get("angle", 0.0),
+            }
+        )
+        return result
 
     def compute_multidim_instability(
         self,

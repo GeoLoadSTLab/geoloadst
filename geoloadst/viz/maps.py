@@ -171,97 +171,49 @@ def plot_network_topology(
 
 
 def plot_topology_with_critical_buses(
-    analyzer: Any | None = None,
-    net: "pandapowerNet | None" = None,
-    bus_ids: np.ndarray | None = None,
-    coords: np.ndarray | None = None,
-    critical_mask: np.ndarray | None = None,
-    ax: "Axes | None" = None,
+    analyzer: Any,
     title: str | None = "Network topology with critical buses",
-    figsize: tuple[float, float] = (8, 6),
-    show_lines: bool = True,
-    node_size: float = 15,
-    critical_size: float = 60,
-    linewidth: float = 0.7,
-    critical_quantile: float = 0.9,
+    node_size: float = 25,
+    critical_size: float = 90,
+    linewidth: float = 0.8,
+    ax: "Axes | None" = None,
 ) -> tuple["Figure", "Axes"]:
-    """Plot network topology highlighting critical buses.
+    """Convenience wrapper to plot topology highlighting critical buses."""
+    if analyzer is None:
+        raise ValueError("analyzer is required for plot_topology_with_critical_buses.")
 
-    Can accept either an InstabilityAnalyzer instance OR explicit parameters.
+    net = getattr(analyzer, "net", None)
+    bus_ids = getattr(analyzer, "bus_ids", None)
+    coords = getattr(analyzer, "coords", None)
+    critical_mask = None
 
-    Parameters
-    ----------
-    analyzer : InstabilityAnalyzer, optional
-        If provided, extracts net, bus_ids, coords, and critical_mask from it.
-    net : pandapowerNet, optional
-        Network for drawing lines. Required if analyzer not provided.
-    bus_ids : np.ndarray, optional
-        Array of bus IDs. Required if analyzer not provided.
-    coords : np.ndarray, optional
-        N×2 array of coordinates. Required if analyzer not provided.
-    critical_mask : np.ndarray, optional
-        Boolean mask for critical nodes. If None and analyzer provided,
-        computed as top quantile of instability_index.
-    ax : Axes, optional
-        Matplotlib axes to plot on.
-    title : str, optional
-        Plot title.
-    figsize : tuple, optional
-        Figure size.
-    show_lines : bool, optional
-        Whether to draw network lines.
-    node_size : float, optional
-        Marker size for normal buses.
-    critical_size : float, optional
-        Marker size for critical buses.
-    linewidth : float, optional
-        Line width for network edges.
-    critical_quantile : float, optional
-        Quantile threshold for determining critical buses (default 0.9).
+    # Try to reuse critical mask from STV if available
+    stv = getattr(analyzer, "_stv_results", None)
+    if stv and "critical_mask" in stv:
+        critical_mask = stv["critical_mask"]
 
-    Returns
-    -------
-    tuple[Figure, Axes]
-        Matplotlib figure and axes.
-    """
-    # Extract from analyzer if provided
-    if analyzer is not None:
-        net = getattr(analyzer, "net", net)
-        bus_ids = getattr(analyzer, "bus_ids", bus_ids)
-        coords = getattr(analyzer, "coords", coords)
+    # If still missing, compute from instability_index (90th percentile)
+    if critical_mask is None:
+        instab = getattr(analyzer, "instability_index", None)
+        if instab is not None:
+            threshold = np.quantile(instab, 0.9)
+            critical_mask = instab >= threshold
 
-        # Determine critical mask
-        if critical_mask is None:
-            # Try to get from stv_results first
-            if hasattr(analyzer, "_stv_results") and analyzer._stv_results is not None:
-                critical_mask = analyzer._stv_results.get("critical_mask")
-            # Fall back to computing from instability_index
-            if critical_mask is None and hasattr(analyzer, "instability_index"):
-                instab = analyzer.instability_index
-                if instab is not None:
-                    threshold = np.quantile(instab, critical_quantile)
-                    critical_mask = instab >= threshold
-
-    # Validate required parameters
-    if bus_ids is None or coords is None:
-        raise ValueError(
-            "Either provide an analyzer or explicit bus_ids and coords."
-        )
-
+    # Validate coordinates and IDs
     bus_ids, coords, extras = _validate_bus_arrays(
         bus_ids, coords, {"critical_mask": critical_mask}
     )
     critical_mask = extras.get("critical_mask")
 
     if ax is None:
-        fig, ax = plt.subplots(figsize=figsize)
+        fig, ax = plt.subplots(figsize=(8, 6))
     else:
         fig = ax.get_figure()
 
     bus_to_coord = {int(bus_ids[i]): coords[i] for i in range(len(bus_ids))}
 
-    # Plot lines if requested and available
-    if show_lines and (net is not None) and hasattr(net, "line"):
+    # Plot lines if available
+    if net is not None and hasattr(net, "line"):
         for _, line in net.line.iterrows():
             fb = int(line["from_bus"])
             tb = int(line["to_bus"])
@@ -270,7 +222,7 @@ def plot_topology_with_critical_buses(
                 x2, y2 = bus_to_coord[tb]
                 ax.plot([x1, x2], [y1, y2], color="lightgray", linewidth=linewidth, zorder=1)
 
-    # Plot all buses
+    # Plot buses
     ax.scatter(
         coords[:, 0],
         coords[:, 1],

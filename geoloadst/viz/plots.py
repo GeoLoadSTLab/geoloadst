@@ -103,6 +103,10 @@ def plot_directional_variograms(
     dir_results: dict[str, Any],
     ax: "Axes | None" = None,
     title: str = "Directional variograms",
+    fontsize: int | None = None,
+    labelsize: int | None = None,
+    ticksize: int | None = None,
+    legend_fontsize: int | None = None,
 ) -> "Figure":
     """Directional variograms for each azimuth provided."""
     if ax is None:
@@ -113,11 +117,13 @@ def plot_directional_variograms(
     for az, DV in dir_results["variograms"].items():
         ax.plot(DV.bins, DV.experimental, marker="o", linestyle="-", label=f"{az}°")
 
-    ax.set_title(title)
-    ax.set_xlabel("Spatial lag")
-    ax.set_ylabel("Semivariance")
+    ax.set_title(title, fontsize=fontsize)
+    ax.set_xlabel("Spatial lag", fontsize=labelsize)
+    ax.set_ylabel("Semivariance", fontsize=labelsize)
     ax.grid(True, alpha=0.3)
-    ax.legend(title="Azimuth")
+    ax.legend(title="Azimuth", fontsize=legend_fontsize, title_fontsize=legend_fontsize)
+    if ticksize is not None:
+        ax.tick_params(axis="both", labelsize=ticksize)
     plt.tight_layout()
 
     return fig
@@ -156,72 +162,30 @@ def plot_polar_ranges(
 def plot_directional_ranges_polar(
     dir_results: dict[str, Any] | dict[int | float, float],
     title: str = "Directional ranges (polar)",
-    fontsize: int = 18,
-    labelsize: int = 14,
-    ticksize: int = 12,
+    fontsize: int | None = None,
+    labelsize: int | None = None,
+    ticksize: int | None = None,
     ax: "Axes | None" = None,
-    color: str = "steelblue",
-    fill_alpha: float = 0.3,
 ) -> "Figure":
-    """Plot directional ranges as a polar diagram with a closed curve and fill.
-
-    Parameters
-    ----------
-    dir_results : dict
-        Either the full dict returned by compute_directional_variograms
-        (must contain "ranges" key), or a direct mapping from azimuth (degrees)
-        to range value.
-    title : str
-        Plot title.
-    fontsize : int
-        Font size for title.
-    labelsize : int
-        Font size for axis labels.
-    ticksize : int
-        Font size for tick labels.
-    ax : Axes, optional
-        Polar axes to plot on; creates one if not provided.
-    color : str
-        Line and fill color.
-    fill_alpha : float
-        Alpha for the filled region.
-
-    Returns
-    -------
-    Figure
-        Matplotlib figure.
-    """
+    """Alias of plot_polar_ranges with font sizing controls."""
     # Accept either dir_results dict with "ranges" key or direct ranges dict
     if isinstance(dir_results, dict) and "ranges" in dir_results:
         ranges = dir_results["ranges"]
     else:
         ranges = dir_results
 
-    if not ranges:
-        raise ValueError("ranges dict is empty; cannot plot polar diagram.")
+    fig = plot_polar_ranges({"ranges": ranges}, ax=ax, title=title)
 
-    if ax is None:
-        fig = plt.figure(figsize=(6, 6))
-        ax = fig.add_subplot(111, polar=True)
-    else:
-        fig = ax.get_figure()
-
-    # Sort by azimuth for consistent ordering
-    sorted_azimuths = sorted(ranges.keys())
-    angles_rad = np.deg2rad(sorted_azimuths)
-    values = np.array([ranges[az] for az in sorted_azimuths])
-
-    # Close the polygon by appending first point
-    angles_closed = np.append(angles_rad, angles_rad[0])
-    values_closed = np.append(values, values[0])
-
-    ax.plot(angles_closed, values_closed, marker="o", color=color, linewidth=2)
-    ax.fill(angles_closed, values_closed, alpha=fill_alpha, color=color)
-    ax.set_title(title, fontsize=fontsize, pad=15)
-    ax.set_theta_zero_location("E")
-    ax.set_theta_direction(-1)
-    ax.tick_params(axis="both", labelsize=ticksize)
-    plt.tight_layout()
+    # Apply font sizing if provided
+    polar_ax = fig.axes[0] if fig.axes else ax
+    if polar_ax is not None:
+        if fontsize is not None:
+            polar_ax.set_title(title, fontsize=fontsize)
+        if labelsize is not None:
+            polar_ax.set_xlabel(polar_ax.get_xlabel(), fontsize=labelsize)
+            polar_ax.set_ylabel(polar_ax.get_ylabel(), fontsize=labelsize)
+        if ticksize is not None:
+            polar_ax.tick_params(axis="both", labelsize=ticksize)
 
     return fig
 
