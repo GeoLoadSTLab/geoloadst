@@ -76,26 +76,90 @@ plt.show()
 ### Example 2 — Instability overlay with critical buses (plots)
 
 ```python
-import matplotlib.pyplot as plt
+import warnings
+warnings.filterwarnings("ignore")
+
 import simbench
+import matplotlib.pyplot as plt
+
 from geoloadst import InstabilityAnalyzer
-from geoloadst.viz.maps import plot_instability_overlay
 
-net = simbench.get_simbench_net("1-complete_data-mixed-all-1-sw")
-analyzer = InstabilityAnalyzer(net, roi=(10.8, 11.7, 53.1, 53.6), time_window=(0, 48), dt_minutes=15.0)
-analyzer.prepare_data()
-stv = analyzer.compute_spatiotemporal_instability(max_buses=200, max_times=48, max_pairs=50_000)
+try:
+    from geoloadst.viz.plots import plot_st_marginals  # your version
+except ImportError:
+    # fallback for other versions
+    from geoloadst.viz.plots import plot_variogram_marginals as plot_st_marginals
 
-fig, ax = plot_instability_overlay(
-    stv["bus_ids_used"],
-    stv["coords_used"],
-    stv["instability_index"],
-    stv["critical_mask"],
-    net=net,
-    title="Critical buses (small ROI)",
-)
-plt.show()
+
+# global typography (simple + reliable)
+plt.rcParams.update({"axes.titlesize": 20,"axes.labelsize": 16,"xtick.labelsize": 14,"ytick.labelsize": 14,"legend.fontsize": 14,})
+
+# >>> IMPORTANT: force spatial maxlag here <<<
+SPACE_MAXLAG = 0.12
+
+
+def recompute_stv_with_fixed_maxlag(analyzer, out, space_maxlag=0.12):
+    """
+    Recompute STV with a fixed spatial maxlag and overwrite analyzer/out results,
+    """
+    from geoloadst.core.spatiotemporal import compute_stv
+
+    coords = out["coords_used"]
+    values_std = out["values_std"]
+
+    # match your defaults
+    x_lags = 12
+    t_lags = 8
+
+    stv_fixed = compute_stv(coords,values_std, dt_minutes=analyzer.dt_minutes,x_lags=x_lags,t_lags=t_lags,maxlag=float(space_maxlag), max_pairs=50_000,random_state=42,)
+
+    # clamp the reported range too (so dashed line won't show > space_maxlag)
+    if "space_range" in stv_fixed:
+        stv_fixed["space_range"] = min(float(stv_fixed["space_range"]), float(space_maxlag))
+
+    # keep compatibility with different package versions
+    out["stv"] = stv_fixed
+    if hasattr(analyzer, "_stv_results") and isinstance(analyzer._stv_results, dict):
+        analyzer._stv_results["stv"] = stv_fixed
+
+    return out
+
+
+def main():
+    net = simbench.get_simbench_net("1-complete_data-mixed-all-1-sw")
+
+    analyzer = InstabilityAnalyzer(
+        net,
+        roi=(10.8, 11.7, 53.1, 53.6),
+        time_window=(0, 96),
+        dt_minutes=15.0,
+    )
+    analyzer.prepare_data()
+
+    out = analyzer.compute_spatiotemporal_instability(
+        max_buses=150,
+        max_times=48,
+        max_pairs=50_000,
+    )
+
+    # >>> Fix STV (spatial lag stops at 0.12, range clamped) <<<
+    out = recompute_stv_with_fixed_maxlag(analyzer, out, space_maxlag=SPACE_MAXLAG)
+
+
+    # (1) Spatial & temporal marginal variograms
+    fig, axs = plt.subplots(1, 2, figsize=(13, 5))
+    plot_st_marginals(out["stv"]["Vx"],out["stv"]["Vt"], out["stv"]["space_range"], out["stv"]["time_range_steps"],out["stv"]["time_range_hours"],ax=axs,title="Spatial & temporal marginal variograms",)
+    plt.tight_layout()
+    plt.show()
+
+
+
+if __name__ == "__main__":
+    main()
 ```
+- Result:
+
+![LISA clusters example](docs/images/Semi.png)
 
 ### Example 3 — Quick summary (minimal/no plotting)
 
