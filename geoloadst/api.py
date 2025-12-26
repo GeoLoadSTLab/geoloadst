@@ -224,25 +224,41 @@ class InstabilityAnalyzer:
 
     def compute_directional_variograms(
         self,
-        azimuths: list[int] | None = None,
         values: np.ndarray | None = None,
+        angles_deg: tuple[int, ...] | list[int] | None = (0, 45, 90, 135),
+        tolerance_deg: float = 22.5,
+        n_lags: int = 8,
+        maxlag: float | None = None,
+        model: str = "spherical",
+        azimuths: list[int] | None = None,
     ) -> dict[str, Any]:
         """Directional variograms for anisotropy; returns ranges and ellipse params.
 
         Parameters
         ----------
-        azimuths : list[int], optional
-            Azimuth angles in degrees. Default is [0, 45, 90, 135].
         values : np.ndarray, optional
             Values to compute variograms for. If None, uses self.instability_index.
             Must have same length as active coords if provided.
+        angles_deg : tuple or list, optional
+            Azimuth angles in degrees. Default is (0, 45, 90, 135).
+        tolerance_deg : float, optional
+            Angular tolerance in degrees for each direction. Default is 22.5.
+        n_lags : int, optional
+            Number of lag bins for the variogram. Default is 8.
+        maxlag : float, optional
+            Maximum lag distance. If None, auto-computed from STV or median distance.
+        model : str, optional
+            Variogram model type. Default is "spherical".
+        azimuths : list[int], optional
+            Deprecated alias for angles_deg. If provided, overrides angles_deg.
 
         Returns
         -------
         dict
             {"variograms": dict[azimuth -> DirectionalVariogram],
              "ranges": dict[azimuth -> float],
-             "major_azimuth", "minor_azimuth", "semi_major", "semi_minor", "angle"}
+             "major_axis_azimuth": int, "minor_axis_azimuth": int,
+             "a": float (semi-major), "b": float (semi-minor)}
 
         Raises
         ------
@@ -253,6 +269,7 @@ class InstabilityAnalyzer:
 
         coords_active = getattr(self, "_active_coords", self.coords)
 
+        # Handle values
         if values is None:
             if self.instability_index is None:
                 raise ValueError(
@@ -261,9 +278,16 @@ class InstabilityAnalyzer:
                 )
             values = self.instability_index
 
-        # Determine maxlag from STV results if available
-        maxlag = None
-        if self._stv_results is not None:
+        # Handle angles: azimuths takes precedence for backward compatibility
+        if azimuths is not None:
+            angles = list(azimuths)
+        elif angles_deg is not None:
+            angles = list(angles_deg)
+        else:
+            angles = [0, 45, 90, 135]
+
+        # Determine maxlag from STV results if not provided
+        if maxlag is None and self._stv_results is not None:
             space_range = self._stv_results["stv"]["space_range"]
             if not np.isnan(space_range):
                 maxlag = space_range * 1.2
@@ -271,13 +295,21 @@ class InstabilityAnalyzer:
         dir_results = compute_directional_variograms(
             coords_active,
             values,
-            azimuths=azimuths,
+            azimuths=angles,
+            tolerance=tolerance_deg,
+            n_lags=n_lags,
             maxlag=maxlag,
+            model=model,
         )
 
         return {
             "variograms": dir_results.get("variograms", {}),
             "ranges": dir_results.get("ranges", {}),
+            "major_axis_azimuth": dir_results.get("major_azimuth"),
+            "minor_axis_azimuth": dir_results.get("minor_azimuth"),
+            "a": dir_results.get("semi_major", np.nan),
+            "b": dir_results.get("semi_minor", np.nan),
+            # Keep old keys for backward compatibility
             "major_azimuth": dir_results.get("major_azimuth"),
             "minor_azimuth": dir_results.get("minor_azimuth"),
             "semi_major": dir_results.get("semi_major", np.nan),

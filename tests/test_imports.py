@@ -167,6 +167,15 @@ def test_directional_variograms_with_values():
     assert "variograms" in dir_results2
     assert "ranges" in dir_results2
 
+    # Test new signature with angles_deg
+    dir_results3 = analyzer.compute_directional_variograms(
+        values=custom_values, angles_deg=(0, 90), tolerance_deg=30.0, n_lags=6
+    )
+    assert "ranges" in dir_results3
+    assert "a" in dir_results3  # new key
+    assert "b" in dir_results3  # new key
+    assert "major_axis_azimuth" in dir_results3
+
 
 def test_plot_directional_ranges_polar_smoke():
     """Test plot_directional_ranges_polar with mock data."""
@@ -175,10 +184,17 @@ def test_plot_directional_ranges_polar_smoke():
     import matplotlib.pyplot as plt
     from geoloadst.viz.plots import plot_directional_ranges_polar
 
+    # Test with direct ranges dict
     ranges = {0: 1.5, 45: 2.0, 90: 1.2, 135: 1.8}
     fig = plot_directional_ranges_polar(ranges, title="Test Polar")
     assert fig is not None
     plt.close(fig)
+
+    # Test with dir_results dict (as returned by compute_directional_variograms)
+    dir_results = {"ranges": {0: 1.5, 45: 2.0, 90: 1.2, 135: 1.8}, "variograms": {}}
+    fig2 = plot_directional_ranges_polar(dir_results, title="Test from dir_results")
+    assert fig2 is not None
+    plt.close(fig2)
 
 
 def test_plot_topology_with_critical_buses_smoke():
@@ -193,9 +209,50 @@ def test_plot_topology_with_critical_buses_smoke():
     coords = np.array([[0, 0], [1, 0], [0.5, 0.5], [1, 1], [0, 1]], dtype=float)
     critical_mask = np.array([False, True, False, True, False])
 
+    # Test with explicit parameters
     fig, ax = plot_topology_with_critical_buses(
         net=None, bus_ids=bus_ids, coords=coords, critical_mask=critical_mask
     )
+    assert fig is not None
+    plt.close(fig)
+
+
+def test_plot_topology_with_analyzer():
+    """Test plot_topology_with_critical_buses with analyzer."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import numpy as np
+    import pandas as pd
+    import json
+    from types import SimpleNamespace
+    from geoloadst import InstabilityAnalyzer
+    from geoloadst.viz.maps import plot_topology_with_critical_buses
+
+    # Build a minimal fake net
+    coords = np.array([[0.0, 0.0], [1.0, 0.0], [0.5, 0.5], [1.0, 1.0], [0.0, 1.0]])
+    bus_geo = pd.Series(
+        [json.dumps({"coordinates": [x, y]}) for x, y in coords],
+        index=np.arange(len(coords)),
+        name="geo",
+    )
+    bus_df = pd.DataFrame({"geo": bus_geo})
+    load_bus = np.array([0, 1, 2, 3, 4])
+    profiles = pd.DataFrame(
+        {f"p{i}_pload": np.linspace(0.8, 1.2, 30) for i in range(5)}
+    )
+    load_df = pd.DataFrame(
+        {"bus": load_bus, "profile": [f"p{i}_pload" for i in range(5)], "p_mw": 1.0},
+        index=np.arange(5),
+    )
+    net = SimpleNamespace(bus=bus_df, load=load_df, profiles={"load": profiles})
+
+    analyzer = InstabilityAnalyzer(net, time_window=(0, 24), dt_minutes=15.0)
+    analyzer.prepare_data()
+    analyzer.compute_spatiotemporal_instability(max_buses=5, max_times=24, max_pairs=100)
+
+    # Test with analyzer
+    fig, ax = plot_topology_with_critical_buses(analyzer=analyzer)
     assert fig is not None
     plt.close(fig)
 

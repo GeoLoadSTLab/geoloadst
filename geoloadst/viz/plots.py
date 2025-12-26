@@ -154,9 +154,11 @@ def plot_polar_ranges(
 
 
 def plot_directional_ranges_polar(
-    ranges: dict[int | float, float],
+    dir_results: dict[str, Any] | dict[int | float, float],
     title: str = "Directional ranges (polar)",
     fontsize: int = 18,
+    labelsize: int = 14,
+    ticksize: int = 12,
     ax: "Axes | None" = None,
     color: str = "steelblue",
     fill_alpha: float = 0.3,
@@ -165,12 +167,18 @@ def plot_directional_ranges_polar(
 
     Parameters
     ----------
-    ranges : dict[int | float, float]
-        Mapping from azimuth (degrees) to range value.
+    dir_results : dict
+        Either the full dict returned by compute_directional_variograms
+        (must contain "ranges" key), or a direct mapping from azimuth (degrees)
+        to range value.
     title : str
         Plot title.
     fontsize : int
         Font size for title.
+    labelsize : int
+        Font size for axis labels.
+    ticksize : int
+        Font size for tick labels.
     ax : Axes, optional
         Polar axes to plot on; creates one if not provided.
     color : str
@@ -183,6 +191,12 @@ def plot_directional_ranges_polar(
     Figure
         Matplotlib figure.
     """
+    # Accept either dir_results dict with "ranges" key or direct ranges dict
+    if isinstance(dir_results, dict) and "ranges" in dir_results:
+        ranges = dir_results["ranges"]
+    else:
+        ranges = dir_results
+
     if not ranges:
         raise ValueError("ranges dict is empty; cannot plot polar diagram.")
 
@@ -206,6 +220,7 @@ def plot_directional_ranges_polar(
     ax.set_title(title, fontsize=fontsize, pad=15)
     ax.set_theta_zero_location("E")
     ax.set_theta_direction(-1)
+    ax.tick_params(axis="both", labelsize=ticksize)
     plt.tight_layout()
 
     return fig

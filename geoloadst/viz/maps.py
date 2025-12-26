@@ -170,31 +170,140 @@ def plot_network_topology(
     return fig, ax
 
 
-# Alias for backwards compatibility and clarity
 def plot_topology_with_critical_buses(
-    net: "pandapowerNet | None",
-    bus_ids: np.ndarray,
-    coords: np.ndarray,
+    analyzer: Any | None = None,
+    net: "pandapowerNet | None" = None,
+    bus_ids: np.ndarray | None = None,
+    coords: np.ndarray | None = None,
     critical_mask: np.ndarray | None = None,
     ax: "Axes | None" = None,
     title: str | None = "Network topology with critical buses",
     figsize: tuple[float, float] = (8, 6),
     show_lines: bool = True,
+    node_size: float = 15,
+    critical_size: float = 60,
+    linewidth: float = 0.7,
+    critical_quantile: float = 0.9,
 ) -> tuple["Figure", "Axes"]:
     """Plot network topology highlighting critical buses.
 
-    This is an alias for plot_network_topology with a clearer name.
+    Can accept either an InstabilityAnalyzer instance OR explicit parameters.
+
+    Parameters
+    ----------
+    analyzer : InstabilityAnalyzer, optional
+        If provided, extracts net, bus_ids, coords, and critical_mask from it.
+    net : pandapowerNet, optional
+        Network for drawing lines. Required if analyzer not provided.
+    bus_ids : np.ndarray, optional
+        Array of bus IDs. Required if analyzer not provided.
+    coords : np.ndarray, optional
+        N×2 array of coordinates. Required if analyzer not provided.
+    critical_mask : np.ndarray, optional
+        Boolean mask for critical nodes. If None and analyzer provided,
+        computed as top quantile of instability_index.
+    ax : Axes, optional
+        Matplotlib axes to plot on.
+    title : str, optional
+        Plot title.
+    figsize : tuple, optional
+        Figure size.
+    show_lines : bool, optional
+        Whether to draw network lines.
+    node_size : float, optional
+        Marker size for normal buses.
+    critical_size : float, optional
+        Marker size for critical buses.
+    linewidth : float, optional
+        Line width for network edges.
+    critical_quantile : float, optional
+        Quantile threshold for determining critical buses (default 0.9).
+
+    Returns
+    -------
+    tuple[Figure, Axes]
+        Matplotlib figure and axes.
     """
-    return plot_network_topology(
-        net=net,
-        bus_ids=bus_ids,
-        coords=coords,
-        critical_mask=critical_mask,
-        ax=ax,
-        title=title,
-        figsize=figsize,
-        show_lines=show_lines,
+    # Extract from analyzer if provided
+    if analyzer is not None:
+        net = getattr(analyzer, "net", net)
+        bus_ids = getattr(analyzer, "bus_ids", bus_ids)
+        coords = getattr(analyzer, "coords", coords)
+
+        # Determine critical mask
+        if critical_mask is None:
+            # Try to get from stv_results first
+            if hasattr(analyzer, "_stv_results") and analyzer._stv_results is not None:
+                critical_mask = analyzer._stv_results.get("critical_mask")
+            # Fall back to computing from instability_index
+            if critical_mask is None and hasattr(analyzer, "instability_index"):
+                instab = analyzer.instability_index
+                if instab is not None:
+                    threshold = np.quantile(instab, critical_quantile)
+                    critical_mask = instab >= threshold
+
+    # Validate required parameters
+    if bus_ids is None or coords is None:
+        raise ValueError(
+            "Either provide an analyzer or explicit bus_ids and coords."
+        )
+
+    bus_ids, coords, extras = _validate_bus_arrays(
+        bus_ids, coords, {"critical_mask": critical_mask}
     )
+    critical_mask = extras.get("critical_mask")
+
+    if ax is None:
+        fig, ax = plt.subplots(figsize=figsize)
+    else:
+        fig = ax.get_figure()
+
+    bus_to_coord = {int(bus_ids[i]): coords[i] for i in range(len(bus_ids))}
+
+    # Plot lines if requested and available
+    if show_lines and (net is not None) and hasattr(net, "line"):
+        for _, line in net.line.iterrows():
+            fb = int(line["from_bus"])
+            tb = int(line["to_bus"])
+            if fb in bus_to_coord and tb in bus_to_coord:
+                x1, y1 = bus_to_coord[fb]
+                x2, y2 = bus_to_coord[tb]
+                ax.plot([x1, x2], [y1, y2], color="lightgray", linewidth=linewidth, zorder=1)
+
+    # Plot all buses
+    ax.scatter(
+        coords[:, 0],
+        coords[:, 1],
+        s=node_size,
+        c="gray",
+        alpha=0.7,
+        label="Buses",
+        zorder=2,
+    )
+
+    # Plot critical buses
+    if critical_mask is not None and np.any(critical_mask):
+        critical_coords = coords[critical_mask]
+        ax.scatter(
+            critical_coords[:, 0],
+            critical_coords[:, 1],
+            s=critical_size,
+            c="red",
+            edgecolors="black",
+            label="Critical buses",
+            zorder=3,
+        )
+
+    ax.set_xlabel("X")
+    ax.set_ylabel("Y")
+    if title:
+        ax.set_title(title)
+    ax.legend()
+    ax.axis("equal")
+    ax.grid(True, alpha=0.3)
+    plt.tight_layout()
+
+    return fig, ax
 
 
 def plot_critical_nodes_map(

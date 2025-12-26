@@ -313,11 +313,13 @@ results = apply_industrial_daynight_pattern(
 from geoloadst.viz.plots import (
     plot_instability_histogram,
     plot_variogram_marginals,
+    plot_directional_ranges_polar,
     plot_pca_clusters,
     plot_moran_timeseries,
 )
 from geoloadst.viz.maps import (
     plot_network_topology,
+    plot_topology_with_critical_buses,
     plot_lisa_clusters_map,
     plot_cluster_map,
 )
@@ -327,6 +329,13 @@ plot_instability_histogram(instability_index, quantile=0.9)
 
 # Plot variogram results
 plot_variogram_marginals(stv_results['stv'])
+
+# Plot directional ranges (polar diagram)
+dir_results = analyzer.compute_directional_variograms(angles_deg=(0, 45, 90, 135))
+plot_directional_ranges_polar(dir_results, title="Directional Ranges")
+
+# Plot network topology with critical buses (using analyzer)
+plot_topology_with_critical_buses(analyzer=analyzer, title="Critical Buses")
 
 # Plot LISA clusters on map
 plot_lisa_clusters_map(bus_ids, coords, cluster_codes, net=net)
