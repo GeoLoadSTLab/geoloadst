@@ -134,7 +134,8 @@ plt.show()
 plt.tight_layout()
 plt.show()
 ```
-Result:
+- Result:
+
 ![LISA clusters example](docs/images/ORI.png)
 
 ### Example 4 — Network + OSM basemap (requires contextily)
