@@ -7,6 +7,60 @@ from typing import Any
 import numpy as np
 
 
+def _trim_trailing_zero_bins(
+    bins: np.ndarray,
+    experimental: np.ndarray,
+    eps_ratio: float = 1e-6,
+) -> tuple[np.ndarray, np.ndarray, int]:
+    """Trim trailing bins where experimental semivariance is effectively zero or non-finite.
+
+    Parameters
+    ----------
+    bins : np.ndarray
+        Lag bin centers.
+    experimental : np.ndarray
+        Experimental semivariance values corresponding to bins.
+    eps_ratio : float
+        Ratio of max(experimental) below which a value is considered "zero".
+
+    Returns
+    -------
+    trimmed_bins : np.ndarray
+        Lag bins with trailing zeros removed.
+    trimmed_exp : np.ndarray
+        Experimental values with trailing zeros removed.
+    n_valid : int
+        Number of valid bins retained.
+    """
+    bins = np.asarray(bins)
+    experimental = np.asarray(experimental)
+
+    if len(bins) == 0:
+        return bins, experimental, 0
+
+    max_exp = np.nanmax(experimental)
+    if not np.isfinite(max_exp) or max_exp == 0:
+        # All zeros or non-finite; keep all bins as-is
+        return bins, experimental, len(bins)
+
+    eps = max_exp * eps_ratio
+
+    # Find last index with a valid (finite and > eps) value
+    last_valid = len(experimental) - 1
+    while last_valid >= 0:
+        val = experimental[last_valid]
+        if np.isfinite(val) and val > eps:
+            break
+        last_valid -= 1
+
+    n_valid = last_valid + 1
+    if n_valid == 0:
+        # Edge case: no valid bins; return at least first bin
+        return bins[:1], experimental[:1], 1
+
+    return bins[:n_valid], experimental[:n_valid], n_valid
+
+
 def compute_stv(
     coords: np.ndarray,
     values_std: np.ndarray,
@@ -17,8 +71,18 @@ def compute_stv(
     model: str = "product-sum",
     max_pairs: int = 200_000,
     random_state: int | None = 42,
+    trim_trailing_zeros: bool = True,
+    eps_ratio: float = 1e-6,
 ) -> dict[str, Any]:
-    """Fit a SpaceTimeVariogram while keeping pairwise computations bounded."""
+    """Fit a SpaceTimeVariogram while keeping pairwise computations bounded.
+
+    Parameters
+    ----------
+    trim_trailing_zeros : bool
+        If True, trim trailing lag bins where experimental semivariance is zero.
+    eps_ratio : float
+        Ratio of max experimental value below which a bin is considered zero.
+    """
     from skgstat import SpaceTimeVariogram
 
     # Bound the pair count by subsampling coordinates if necessary
@@ -65,17 +129,41 @@ def compute_stv(
     else:
         Vt = stv.create_TMarginal()
 
-    # Extract spatial range
+    # Trim trailing zeros if requested
+    if trim_trailing_zeros:
+        x_bins_trimmed, x_exp_trimmed, n_valid_x = _trim_trailing_zero_bins(
+            Vx.bins, Vx.experimental, eps_ratio
+        )
+        t_bins_trimmed, t_exp_trimmed, n_valid_t = _trim_trailing_zero_bins(
+            Vt.bins, Vt.experimental, eps_ratio
+        )
+        max_valid_space_lag = x_bins_trimmed[-1] if n_valid_x > 0 else np.nan
+        max_valid_time_lag = t_bins_trimmed[-1] if n_valid_t > 0 else np.nan
+    else:
+        x_bins_trimmed = Vx.bins
+        x_exp_trimmed = Vx.experimental
+        t_bins_trimmed = Vt.bins
+        t_exp_trimmed = Vt.experimental
+        max_valid_space_lag = Vx.bins[-1] if len(Vx.bins) > 0 else np.nan
+        max_valid_time_lag = Vt.bins[-1] if len(Vt.bins) > 0 else np.nan
+
+    # Extract spatial range and clamp to max valid lag
     try:
         space_range = Vx.effective_range
     except AttributeError:
         space_range = Vx.parameters[0] if len(Vx.parameters) > 0 else np.nan
 
-    # Extract temporal range (in time steps)
+    if np.isfinite(space_range) and np.isfinite(max_valid_space_lag):
+        space_range = min(space_range, max_valid_space_lag)
+
+    # Extract temporal range (in time steps) and clamp
     try:
         time_range_steps = Vt.effective_range
     except AttributeError:
         time_range_steps = Vt.parameters[0] if len(Vt.parameters) > 0 else np.nan
+
+    if np.isfinite(time_range_steps) and np.isfinite(max_valid_time_lag):
+        time_range_steps = min(time_range_steps, max_valid_time_lag)
 
     time_range_hours = time_range_steps * dt_minutes / 60.0
 
@@ -84,8 +172,19 @@ def compute_stv(
         "space_range": space_range,
         "time_range_steps": time_range_steps,
         "time_range_hours": time_range_hours,
+        # Primary keys
         "x_marginal": Vx,
         "t_marginal": Vt,
+        # Aliases for backward compatibility
+        "Vx": Vx,
+        "Vt": Vt,
+        # Trimmed data for plotting
+        "x_bins_trimmed": x_bins_trimmed,
+        "x_exp_trimmed": x_exp_trimmed,
+        "t_bins_trimmed": t_bins_trimmed,
+        "t_exp_trimmed": t_exp_trimmed,
+        "max_valid_space_lag": max_valid_space_lag,
+        "max_valid_time_lag": max_valid_time_lag,
         "indices_used": keep_idx,
     }
 

@@ -76,19 +76,45 @@ def plot_instability_histogram(
 def plot_variogram_marginals(
     stv_results: dict[str, Any],
     figsize: tuple[float, float] = (12, 5),
+    trim_trailing_zeros: bool = True,
 ) -> "Figure":
-    """Spatial and temporal marginals from an STV fit."""
+    """Spatial and temporal marginals from an STV fit.
+
+    Parameters
+    ----------
+    stv_results : dict
+        Output from compute_stv or stv sub-dict from compute_spatiotemporal_instability.
+    figsize : tuple
+        Figure size.
+    trim_trailing_zeros : bool
+        If True and trimmed bins are available, plot only valid bins.
+    """
     fig, axs = plt.subplots(1, 2, figsize=figsize)
 
-    Vx = stv_results["x_marginal"]
-    Vt = stv_results["t_marginal"]
+    Vx = stv_results.get("x_marginal") or stv_results.get("Vx")
+    Vt = stv_results.get("t_marginal") or stv_results.get("Vt")
     space_range = stv_results["space_range"]
     time_range_steps = stv_results["time_range_steps"]
     time_range_hours = stv_results["time_range_hours"]
 
+    # Use trimmed bins if available
+    if trim_trailing_zeros and "x_bins_trimmed" in stv_results:
+        x_bins = stv_results["x_bins_trimmed"]
+        x_exp = stv_results["x_exp_trimmed"]
+    else:
+        x_bins = Vx.bins
+        x_exp = Vx.experimental
+
+    if trim_trailing_zeros and "t_bins_trimmed" in stv_results:
+        t_bins = stv_results["t_bins_trimmed"]
+        t_exp = stv_results["t_exp_trimmed"]
+    else:
+        t_bins = Vt.bins
+        t_exp = Vt.experimental
+
     # Spatial marginal
-    axs[0].plot(Vx.bins, Vx.experimental, "o-", label="Experimental")
-    axs[0].plot(Vx.bins, Vx.fitted_model(Vx.bins), "-", label="Model")
+    axs[0].plot(x_bins, x_exp, "o-", label="Experimental")
+    axs[0].plot(x_bins, Vx.fitted_model(x_bins), "-", label="Model")
     axs[0].axvline(
         space_range,
         color="red",
@@ -102,8 +128,8 @@ def plot_variogram_marginals(
     axs[0].legend()
 
     # Temporal marginal
-    axs[1].plot(Vt.bins, Vt.experimental, "o-", label="Experimental")
-    axs[1].plot(Vt.bins, Vt.fitted_model(Vt.bins), "-", label="Model")
+    axs[1].plot(t_bins, t_exp, "o-", label="Experimental")
+    axs[1].plot(t_bins, Vt.fitted_model(t_bins), "-", label="Model")
     axs[1].axvline(
         time_range_steps,
         color="red",
@@ -129,18 +155,46 @@ def plot_st_marginals(
     ax: tuple["Axes", "Axes"] | None = None,
     figsize: tuple[float, float] = (12, 5),
     title: str | None = None,
+    x_bins: np.ndarray | None = None,
+    x_exp: np.ndarray | None = None,
+    t_bins: np.ndarray | None = None,
+    t_exp: np.ndarray | None = None,
     **kwargs: Any,
 ) -> "Figure":
-    """Plot spatial and temporal marginal variograms with range markers."""
+    """Plot spatial and temporal marginal variograms with range markers.
+
+    Parameters
+    ----------
+    Vx, Vt : Variogram
+        Marginal variogram objects from skgstat.
+    space_range, time_range_steps, time_range_hours : float
+        Range estimates.
+    ax : tuple of Axes, optional
+        Two axes to plot on.
+    x_bins, x_exp : np.ndarray, optional
+        Trimmed lag bins and experimental values for spatial marginal.
+    t_bins, t_exp : np.ndarray, optional
+        Trimmed lag bins and experimental values for temporal marginal.
+    """
     if ax is None:
         fig, axs = plt.subplots(1, 2, figsize=figsize)
     else:
         axs = ax
         fig = axs[0].get_figure()
 
+    # Use provided trimmed bins or fall back to full bins
+    if x_bins is None:
+        x_bins = Vx.bins
+    if x_exp is None:
+        x_exp = Vx.experimental
+    if t_bins is None:
+        t_bins = Vt.bins
+    if t_exp is None:
+        t_exp = Vt.experimental
+
     # Spatial marginal
-    axs[0].plot(Vx.bins, Vx.experimental, "o-", label="Experimental")
-    axs[0].plot(Vx.bins, Vx.fitted_model(Vx.bins), "-", label="Model")
+    axs[0].plot(x_bins, x_exp, "o-", label="Experimental")
+    axs[0].plot(x_bins, Vx.fitted_model(x_bins), "-", label="Model")
     axs[0].axvline(space_range, color="red", linestyle="--", label=f"Range ≈ {space_range:.2f}")
     axs[0].set_title("Spatial marginal variogram")
     axs[0].set_xlabel("Spatial lag")
@@ -149,8 +203,8 @@ def plot_st_marginals(
     axs[0].legend()
 
     # Temporal marginal
-    axs[1].plot(Vt.bins, Vt.experimental, "o-", label="Experimental")
-    axs[1].plot(Vt.bins, Vt.fitted_model(Vt.bins), "-", label="Model")
+    axs[1].plot(t_bins, t_exp, "o-", label="Experimental")
+    axs[1].plot(t_bins, Vt.fitted_model(t_bins), "-", label="Model")
     axs[1].axvline(
         time_range_steps,
         color="red",
