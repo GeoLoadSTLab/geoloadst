@@ -225,24 +225,65 @@ class InstabilityAnalyzer:
     def compute_directional_variograms(
         self,
         azimuths: list[int] | None = None,
+        values: np.ndarray | None = None,
     ) -> dict[str, Any]:
-        """Directional variograms for anisotropy; returns ranges and ellipse params."""
-        self._check_instability_computed()
+        """Directional variograms for anisotropy; returns ranges and ellipse params.
 
+        Parameters
+        ----------
+        azimuths : list[int], optional
+            Azimuth angles in degrees. Default is [0, 45, 90, 135].
+        values : np.ndarray, optional
+            Values to compute variograms for. If None, uses self.instability_index.
+            Must have same length as active coords if provided.
+
+        Returns
+        -------
+        dict
+            {"variograms": dict[azimuth -> DirectionalVariogram],
+             "ranges": dict[azimuth -> float],
+             "major_azimuth", "minor_azimuth", "semi_major", "semi_minor", "angle"}
+
+        Raises
+        ------
+        ValueError
+            If values is None and instability_index has not been computed.
+        """
         from geoloadst.core.spatiotemporal import compute_directional_variograms
 
-        space_range = self._stv_results["stv"]["space_range"]
         coords_active = getattr(self, "_active_coords", self.coords)
-        instab_active = self.instability_index
+
+        if values is None:
+            if self.instability_index is None:
+                raise ValueError(
+                    "No values provided and instability_index is None. "
+                    "Either pass values explicitly or call compute_spatiotemporal_instability() first."
+                )
+            values = self.instability_index
+
+        # Determine maxlag from STV results if available
+        maxlag = None
+        if self._stv_results is not None:
+            space_range = self._stv_results["stv"]["space_range"]
+            if not np.isnan(space_range):
+                maxlag = space_range * 1.2
 
         dir_results = compute_directional_variograms(
             coords_active,
-            instab_active,
+            values,
             azimuths=azimuths,
-            maxlag=space_range * 1.2 if not np.isnan(space_range) else None,
+            maxlag=maxlag,
         )
 
-        return dir_results
+        return {
+            "variograms": dir_results.get("variograms", {}),
+            "ranges": dir_results.get("ranges", {}),
+            "major_azimuth": dir_results.get("major_azimuth"),
+            "minor_azimuth": dir_results.get("minor_azimuth"),
+            "semi_major": dir_results.get("semi_major", np.nan),
+            "semi_minor": dir_results.get("semi_minor", np.nan),
+            "angle": dir_results.get("angle", 0.0),
+        }
 
     def compute_multidim_instability(
         self,

@@ -65,8 +65,17 @@ def local_moran_clusters(
 def classify_lisa_clusters(
     lisa: "Moran_Local", p_threshold: float = 0.05
 ) -> np.ndarray:
-    """Map a Moran_Local object to cluster codes with a p-value cutoff."""
-    sig = lisa.p_sim < p_threshold
+    """Map a Moran_Local object to cluster codes with a p-value cutoff.
+
+    If permutations=0 was used (no p_sim), falls back to treating all as significant.
+    """
+    # Handle case where permutations=0 (no p_sim attribute)
+    if hasattr(lisa, "p_sim") and lisa.p_sim is not None:
+        sig = lisa.p_sim < p_threshold
+    else:
+        # No permutation test; treat all as significant based on quadrant only
+        sig = np.ones(len(lisa.q), dtype=bool)
+
     cluster = np.zeros(len(lisa.q), dtype=int)
     q = lisa.q
 

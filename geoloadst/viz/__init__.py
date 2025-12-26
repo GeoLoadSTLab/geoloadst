@@ -5,6 +5,7 @@ from geoloadst.viz.plots import (
     plot_variogram_marginals,
     plot_directional_variograms,
     plot_polar_ranges,
+    plot_directional_ranges_polar,
     plot_pca_clusters,
     plot_moran_timeseries,
     plot_correlation_scatter,
@@ -12,6 +13,7 @@ from geoloadst.viz.plots import (
 )
 from geoloadst.viz.maps import (
     plot_network_topology,
+    plot_topology_with_critical_buses,
     plot_critical_nodes_map,
     plot_lisa_clusters_map,
     plot_cluster_map,
@@ -27,12 +29,14 @@ __all__ = [
     "plot_variogram_marginals",
     "plot_directional_variograms",
     "plot_polar_ranges",
+    "plot_directional_ranges_polar",
     "plot_pca_clusters",
     "plot_moran_timeseries",
     "plot_correlation_scatter",
     "plot_mean_load_evolution",
     # Maps
     "plot_network_topology",
+    "plot_topology_with_critical_buses",
     "plot_critical_nodes_map",
     "plot_lisa_clusters_map",
     "plot_cluster_map",
