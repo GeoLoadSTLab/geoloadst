@@ -958,3 +958,158 @@ def plot_instability_overlay(
 
     return fig, ax
 
+
+def plot_sample_critical_with_global_ellipse(
+    analyzer: Any,
+    title: str = "Critical node with global anisotropic ellipse",
+    ax: "Axes | None" = None,
+    node_size: float = 25,
+    critical_size: float = 90,
+    linewidth: float = 0.8,
+) -> tuple["Figure", "Axes"]:
+    """Plot topology and overlay a global ellipse on the first critical node."""
+    if analyzer is None:
+        raise ValueError("analyzer is required for plot_sample_critical_with_global_ellipse.")
+
+    fig, ax = plot_topology_with_critical_buses(
+        analyzer=analyzer,
+        title=title,
+        node_size=node_size,
+        critical_size=critical_size,
+        linewidth=linewidth,
+        ax=ax,
+    )
+
+    # Derive ellipse parameters from directional results
+    dir_res = getattr(analyzer, "directional_results", None) or {}
+    ranges = dir_res.get("ranges", {})
+    if ranges:
+        az_major = max(ranges, key=ranges.get)
+        az_minor = min(ranges, key=ranges.get)
+        a = ranges.get(az_major, np.nan)
+        b = ranges.get(az_minor, np.nan)
+    else:
+        az_major = az_minor = 0
+        a = b = np.nan
+
+    crit_mask = getattr(analyzer, "critical_mask", None)
+    coords = analyzer.coords
+    if crit_mask is not None and np.any(crit_mask):
+        center_idx = np.where(crit_mask)[0][0]
+    else:
+        center_idx = 0
+
+    if not np.isnan(a) and not np.isnan(b):
+        x0, y0 = coords[center_idx]
+        ell = Ellipse(
+            (x0, y0),
+            width=2 * a,
+            height=2 * b,
+            angle=az_major,
+            fill=False,
+            edgecolor="blue",
+            linewidth=1.5,
+            alpha=0.8,
+        )
+        ax.add_patch(ell)
+
+    return fig, ax
+
+
+def plot_geopandas_map(
+    analyzer_or_layers: Any,
+    title: str = "GeoPandas map (no basemap)",
+    ax: "Axes | None" = None,
+    node_size: float = 10,
+    critical_size: float = 40,
+    linewidth: float = 0.7,
+) -> tuple["Figure", "Axes"] | None:
+    """Plot GeoPandas layers (lines + buses + critical buses) if available."""
+    try:
+        import geopandas as gpd  # noqa: F401
+    except Exception as exc:  # pragma: no cover - optional dependency
+        print(f"[geoloadst] GeoPandas not available, skipping map: {exc}")
+        return None
+
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(8, 6))
+    else:
+        fig = ax.get_figure()
+
+    if hasattr(analyzer_or_layers, "bus_gdf"):
+        bus_gdf = analyzer_or_layers.bus_gdf
+        lines_gdf = analyzer_or_layers.lines_gdf
+        critical_gdf = analyzer_or_layers.critical_gdf
+    else:
+        bus_gdf = getattr(analyzer_or_layers, "bus_gdf", None)
+        lines_gdf = getattr(analyzer_or_layers, "lines_gdf", None)
+        critical_gdf = getattr(analyzer_or_layers, "critical_gdf", None)
+
+    if lines_gdf is not None:
+        lines_gdf.plot(ax=ax, linewidth=linewidth, color="lightgray", zorder=1)
+    if bus_gdf is not None:
+        bus_gdf.plot(ax=ax, markersize=node_size, color="gray", alpha=0.7, label="Buses", zorder=2)
+    if critical_gdf is not None:
+        critical_gdf.plot(
+            ax=ax, markersize=critical_size, color="red", edgecolor="black", label="Critical", zorder=3
+        )
+
+    ax.set_title(title)
+    ax.set_xlabel("X")
+    ax.set_ylabel("Y")
+    ax.axis("equal")
+    ax.grid(True, alpha=0.3)
+    if bus_gdf is not None or critical_gdf is not None:
+        ax.legend()
+    plt.tight_layout()
+    return fig, ax
+
+
+def plot_local_anisotropic_ellipses(
+    analyzer: Any,
+    title: str = "Local anisotropic ellipses",
+    ax: "Axes | None" = None,
+    node_size: float = 15,
+    critical_size: float = 80,
+    linewidth: float = 0.7,
+) -> tuple["Figure", "Axes"]:
+    """Plot topology with local ellipses for nodes that have local_a/local_b."""
+    if analyzer is None:
+        raise ValueError("analyzer is required for plot_local_anisotropic_ellipses.")
+
+    fig, ax = plot_topology_with_critical_buses(
+        analyzer=analyzer,
+        title=title,
+        node_size=node_size,
+        critical_size=critical_size,
+        linewidth=linewidth,
+        ax=ax,
+    )
+
+    local_res = getattr(analyzer, "local_anisotropy_results", {}) or {}
+    local_a = local_res.get("local_a")
+    local_b = local_res.get("local_b")
+    local_angle = local_res.get("local_angle")
+
+    if local_a is not None and local_b is not None and local_angle is not None:
+        for idx in range(len(analyzer.coords)):
+            a = local_a[idx]
+            b = local_b[idx]
+            if np.isnan(a) or np.isnan(b):
+                continue
+            angle = local_angle[idx] if not np.isnan(local_angle[idx]) else 0.0
+            x0, y0 = analyzer.coords[idx]
+            ell = Ellipse(
+                (x0, y0),
+                width=2 * a,
+                height=2 * b,
+                angle=angle,
+                fill=False,
+                edgecolor="blue",
+                linewidth=1.2,
+                alpha=0.8,
+            )
+            ax.add_patch(ell)
+
+    return fig, ax
+

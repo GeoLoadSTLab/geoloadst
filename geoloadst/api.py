@@ -54,6 +54,12 @@ class InstabilityAnalyzer:
         self._coords_full: np.ndarray | None = None
         self._bus_load_df_full: pd.DataFrame | None = None
         self._subsample_idx: np.ndarray | None = None
+        # Exposed results for full workflow
+        self.bus_load_timeseries: pd.DataFrame | None = None
+        self.critical_mask: np.ndarray | None = None
+        self.space_time_variogram_results: dict | None = None
+        self.directional_results: dict | None = None
+        self.local_anisotropy_results: dict | None = None
 
     def prepare_data(self) -> "InstabilityAnalyzer":
         """Pull bus coords, apply ROI, and assemble per-bus load time series."""
@@ -295,6 +301,174 @@ class InstabilityAnalyzer:
             }
         )
         return result
+
+    def run_full_workflow(
+        self,
+        *,
+        roi_fraction: float | None = None,
+        roi: tuple[float, float, float, float] | None = None,
+        time_window: tuple[int, int] = (0, 96),
+        dt_minutes: float = 15.0,
+        max_buses: int = 200,
+        max_times: int = 96,
+        max_pairs: int = 50_000,
+        unstable_quantile: float = 0.9,
+        stv_x_lags: int = 12,
+        stv_t_lags: int = 8,
+        stv_model: str = "product-sum",
+        dir_angles_deg: tuple[int, ...] = (0, 45, 90, 135),
+        dir_tolerance_deg: float = 22.5,
+        dir_n_lags: int = 8,
+        dir_model: str = "spherical",
+        local_max_crit: int = 5,
+        local_k: int = 40,
+        local_angles_deg: tuple[int, ...] = (0, 90),
+        local_tolerance_deg: float = 30.0,
+        local_n_lags: int = 5,
+        local_model: str = "spherical",
+        make_geopandas_maps: bool = True,
+    ) -> dict[str, Any]:
+        """End-to-end workflow: ROI selection, STV, directional + local anisotropy, maps."""
+        from geoloadst.core.roi import compute_center_roi
+        from geoloadst.io.simbench_adapter import extract_bus_coordinates
+        from geoloadst.core.spatiotemporal import compute_local_variograms
+
+        # Configure ROI/time
+        self.time_window = time_window
+        self.dt_minutes = dt_minutes
+        if roi is None and roi_fraction is not None:
+            all_bus_ids, all_coords, _ = extract_bus_coordinates(self.net)
+            if all_coords is None or len(all_coords) == 0:
+                raise ValueError("No bus coordinates available to compute ROI.")
+            roi = compute_center_roi(all_coords, roi_fraction)
+        if roi is not None:
+            self.roi = roi
+        self.roi_fraction = roi_fraction
+
+        # Prepare data and compute STV
+        self.prepare_data()
+        self.bus_load_timeseries = self.bus_load_df
+
+        stv_results = self.compute_spatiotemporal_instability(
+            x_lags=stv_x_lags,
+            t_lags=stv_t_lags,
+            unstable_quantile=unstable_quantile,
+            max_buses=max_buses,
+            max_times=max_times,
+            max_pairs=max_pairs,
+            random_state=42,
+        )
+        self.critical_mask = stv_results.get("critical_mask")
+
+        stv_dict = stv_results.get("stv", {})
+        self.space_time_variogram_results = {
+            "stv": stv_dict,
+            "Vx": stv_dict.get("x_marginal"),
+            "Vt": stv_dict.get("t_marginal"),
+            "space_range": stv_dict.get("space_range", np.nan),
+            "time_range_steps": stv_dict.get("time_range_steps", np.nan),
+            "time_range_hours": stv_dict.get("time_range_hours", np.nan),
+        }
+
+        # Directional variograms on instability index
+        dir_results = self.compute_directional_variograms(
+            values=self.instability_index,
+            angles_deg=dir_angles_deg,
+            tolerance_deg=dir_tolerance_deg,
+            n_lags=dir_n_lags,
+            model=dir_model,
+        )
+        self.directional_results = {
+            "angles_deg": dir_results.get("angles_deg", dir_angles_deg),
+            "ranges": dir_results.get("ranges", {}),
+            "variograms": dir_results.get("variograms", {}),
+        }
+
+        # Local anisotropy around top critical nodes
+        n = len(self.coords)
+        local_iso = np.full(n, np.nan)
+        local_a = np.full(n, np.nan)
+        local_b = np.full(n, np.nan)
+        local_angle = np.full(n, np.nan)
+        critical_indices = (
+            np.where(self.critical_mask)[0] if self.critical_mask is not None else np.array([], dtype=int)
+        )
+        for idx in critical_indices[:local_max_crit]:
+            try:
+                res_local = compute_local_variograms(
+                    self.coords,
+                    self.instability_index,
+                    center_idx=idx,
+                    k_neighbors=local_k,
+                    n_lags=local_n_lags,
+                    model=local_model,
+                )
+                local_iso[idx] = res_local.get("iso_range", np.nan)
+                local_a[idx] = res_local.get("local_major", np.nan)
+                local_b[idx] = res_local.get("local_minor", np.nan)
+                local_angle[idx] = res_local.get("local_angle", np.nan)
+            except Exception:
+                continue
+
+        self.local_anisotropy_results = {
+            "local_iso": local_iso,
+            "local_a": local_a,
+            "local_b": local_b,
+            "local_angle": local_angle,
+        }
+
+        # GeoPandas layers (optional)
+        bus_gdf = lines_gdf = critical_gdf = None
+        if make_geopandas_maps:
+            try:
+                import geopandas as gpd
+                from shapely.geometry import Point, LineString
+
+                bus_gdf = gpd.GeoDataFrame(
+                    {"bus": self.bus_ids},
+                    geometry=[Point(xy) for xy in self.coords],
+                    crs="EPSG:4326",
+                )
+                if hasattr(self.net, "line"):
+                    line_geoms = []
+                    line_ids = []
+                    bus_to_coord = {int(self.bus_ids[i]): self.coords[i] for i in range(len(self.bus_ids))}
+                    for idx_line, line in self.net.line.iterrows():
+                        fb = int(line["from_bus"])
+                        tb = int(line["to_bus"])
+                        if fb in bus_to_coord and tb in bus_to_coord:
+                            line_geoms.append(LineString([bus_to_coord[fb], bus_to_coord[tb]]))
+                            line_ids.append(idx_line)
+                    if line_geoms:
+                        lines_gdf = gpd.GeoDataFrame({"line": line_ids}, geometry=line_geoms, crs="EPSG:4326")
+                if self.critical_mask is not None:
+                    crit_coords = self.coords[self.critical_mask]
+                    crit_ids = self.bus_ids[self.critical_mask]
+                    critical_gdf = gpd.GeoDataFrame(
+                        {"bus": crit_ids}, geometry=[Point(xy) for xy in crit_coords], crs="EPSG:4326"
+                    )
+            except Exception as exc:
+                print(f"[geoloadst] GeoPandas map layers skipped: {exc}")
+
+        # Expose layers on analyzer for plotting helpers
+        self.bus_gdf = bus_gdf
+        self.lines_gdf = lines_gdf
+        self.critical_gdf = critical_gdf
+
+        output = {
+            "bus_ids": self.bus_ids,
+            "coords": self.coords,
+            "bus_load_timeseries": self.bus_load_timeseries,
+            "instability_index": self.instability_index,
+            "critical_mask": self.critical_mask,
+            "space_time_variogram_results": self.space_time_variogram_results,
+            "directional_results": self.directional_results,
+            "local_anisotropy_results": self.local_anisotropy_results,
+            "bus_gdf": bus_gdf,
+            "lines_gdf": lines_gdf,
+            "critical_gdf": critical_gdf,
+        }
+        return output
 
     def compute_multidim_instability(
         self,

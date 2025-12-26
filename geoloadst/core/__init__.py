@@ -22,6 +22,11 @@ from geoloadst.core.resilience import (
     vulnerability_index,
     critical_node_summary,
 )
+from geoloadst.core.roi import (
+    extract_xy_from_geo,
+    compute_center_roi,
+    filter_buses_in_roi,
+)
 
 __all__ = [
     "detrend_and_standardize",
@@ -41,5 +46,8 @@ __all__ = [
     "compare_scenarios",
     "vulnerability_index",
     "critical_node_summary",
+    "extract_xy_from_geo",
+    "compute_center_roi",
+    "filter_buses_in_roi",
 ]
 

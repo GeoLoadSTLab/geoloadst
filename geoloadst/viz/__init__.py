@@ -14,6 +14,9 @@ from geoloadst.viz.plots import (
 from geoloadst.viz.maps import (
     plot_network_topology,
     plot_topology_with_critical_buses,
+    plot_sample_critical_with_global_ellipse,
+    plot_geopandas_map,
+    plot_local_anisotropic_ellipses,
     plot_critical_nodes_map,
     plot_lisa_clusters_map,
     plot_cluster_map,
@@ -37,6 +40,9 @@ __all__ = [
     # Maps
     "plot_network_topology",
     "plot_topology_with_critical_buses",
+    "plot_sample_critical_with_global_ellipse",
+    "plot_geopandas_map",
+    "plot_local_anisotropic_ellipses",
     "plot_critical_nodes_map",
     "plot_lisa_clusters_map",
     "plot_cluster_map",

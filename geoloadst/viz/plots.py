@@ -14,38 +14,51 @@ if TYPE_CHECKING:
 
 def plot_instability_histogram(
     instability_index: np.ndarray,
-    threshold: float | None = None,
-    quantile: float = 0.9,
-    ax: "Axes | None" = None,
+    q_thr: float | None = None,
     title: str = "Instability index distribution",
     xlabel: str = "Instability index (RMS)",
+    ylabel: str = "Count",
+    bins: int = 30,
+    ax: "Axes | None" = None,
+    threshold: float | None = None,
+    quantile: float = 0.9,
     **kwargs: Any,
 ) -> "Figure":
-    """Histogram of instability with an optional percentile marker."""
+    """Histogram of instability with optional percentile marker."""
     if ax is None:
         fig, ax = plt.subplots(figsize=(6, 4))
     else:
         fig = ax.get_figure()
 
-    hist_kwargs = {"bins": 30, "alpha": 0.7}
+    hist_kwargs = {"bins": bins, "alpha": 0.7}
     hist_kwargs.update(kwargs)
-
     ax.hist(instability_index, **hist_kwargs)
 
-    if threshold is None:
-        threshold = np.quantile(instability_index, quantile)
-
-    ax.axvline(
-        threshold,
-        color="red",
-        linestyle="--",
-        label=f"{quantile*100:.0f}th percentile ({threshold:.3f})",
-    )
+    if q_thr is not None:
+        thr = np.quantile(instability_index, q_thr)
+        ax.axvline(
+            thr,
+            color="red",
+            linestyle="--",
+            label=f"{q_thr*100:.0f}th percentile ({thr:.3f})",
+        )
+        ax.legend()
+    elif threshold is not None:
+        ax.axvline(threshold, color="red", linestyle="--", label=f"Threshold {threshold:.3f}")
+        ax.legend()
+    elif quantile is not None:
+        thr = np.quantile(instability_index, quantile)
+        ax.axvline(
+            thr,
+            color="red",
+            linestyle="--",
+            label=f"{quantile*100:.0f}th percentile ({thr:.3f})",
+        )
+        ax.legend()
 
     ax.set_title(title)
     ax.set_xlabel(xlabel)
-    ax.set_ylabel("Count")
-    ax.legend()
+    ax.set_ylabel(ylabel)
     ax.grid(True, alpha=0.3)
     plt.tight_layout()
 
@@ -74,6 +87,51 @@ def plot_variogram_marginals(
         linestyle="--",
         label=f"Range ≈ {space_range:.2f}",
     )
+    axs[0].set_title("Spatial marginal variogram")
+    axs[0].set_xlabel("Spatial lag")
+    axs[0].set_ylabel("Semivariance")
+    axs[0].grid(True, alpha=0.3)
+    axs[0].legend()
+
+    # Temporal marginal
+    axs[1].plot(Vt.bins, Vt.experimental, "o-", label="Experimental")
+    axs[1].plot(Vt.bins, Vt.fitted_model(Vt.bins), "-", label="Model")
+    axs[1].axvline(
+        time_range_steps,
+        color="red",
+        linestyle="--",
+        label=f"Range ≈ {time_range_steps:.1f} steps\n≈ {time_range_hours:.1f} h",
+    )
+    axs[1].set_title("Temporal marginal variogram")
+    axs[1].set_xlabel("Time lag (steps)")
+    axs[1].set_ylabel("Semivariance")
+    axs[1].grid(True, alpha=0.3)
+    axs[1].legend()
+
+    plt.tight_layout()
+    return fig
+
+
+def plot_st_marginals(
+    Vx: Any,
+    Vt: Any,
+    space_range: float,
+    time_range_steps: float,
+    time_range_hours: float,
+    ax: tuple["Axes", "Axes"] | None = None,
+    figsize: tuple[float, float] = (12, 5),
+) -> "Figure":
+    """Plot spatial and temporal marginal variograms with range markers."""
+    if ax is None:
+        fig, axs = plt.subplots(1, 2, figsize=figsize)
+    else:
+        axs = ax
+        fig = axs[0].get_figure()
+
+    # Spatial marginal
+    axs[0].plot(Vx.bins, Vx.experimental, "o-", label="Experimental")
+    axs[0].plot(Vx.bins, Vx.fitted_model(Vx.bins), "-", label="Model")
+    axs[0].axvline(space_range, color="red", linestyle="--", label=f"Range ≈ {space_range:.2f}")
     axs[0].set_title("Spatial marginal variogram")
     axs[0].set_xlabel("Spatial lag")
     axs[0].set_ylabel("Semivariance")
@@ -130,18 +188,23 @@ def plot_directional_variograms(
 
 
 def plot_polar_ranges(
-    dir_results: dict[str, Any],
+    dir_results: dict[str, Any] | dict[int | float, float],
     ax: "Axes | None" = None,
     title: str = "Directional instability radius",
+    fontsize: int | None = None,
+    labelsize: int | None = None,
+    ticksize: int | None = None,
+    color: str = "steelblue",
+    fill_alpha: float = 0.3,
 ) -> "Figure":
-    """Polar plot of directional ranges."""
+    """Polar plot of directional ranges with optional sizing controls."""
     if ax is None:
         fig = plt.figure(figsize=(5, 5))
         ax = fig.add_subplot(111, polar=True)
     else:
         fig = ax.get_figure()
 
-    ranges = dir_results["ranges"]
+    ranges = dir_results["ranges"] if isinstance(dir_results, dict) and "ranges" in dir_results else dir_results
     angles_rad = np.deg2rad(list(ranges.keys()))
     values = np.array(list(ranges.values()))
 
@@ -149,11 +212,16 @@ def plot_polar_ranges(
     angles_rad_closed = np.append(angles_rad, angles_rad[0])
     values_closed = np.append(values, values[0])
 
-    ax.plot(angles_rad_closed, values_closed, marker="o")
-    ax.fill(angles_rad_closed, values_closed, alpha=0.3)
-    ax.set_title(title)
+    ax.plot(angles_rad_closed, values_closed, marker="o", color=color)
+    ax.fill(angles_rad_closed, values_closed, alpha=fill_alpha, color=color)
+    ax.set_title(title, fontsize=fontsize)
     ax.set_theta_zero_location("E")
     ax.set_theta_direction(-1)
+    if labelsize is not None:
+        ax.set_xlabel(ax.get_xlabel(), fontsize=labelsize)
+        ax.set_ylabel(ax.get_ylabel(), fontsize=labelsize)
+    if ticksize is not None:
+        ax.tick_params(axis="both", labelsize=ticksize)
     plt.tight_layout()
 
     return fig
@@ -168,26 +236,14 @@ def plot_directional_ranges_polar(
     ax: "Axes | None" = None,
 ) -> "Figure":
     """Alias of plot_polar_ranges with font sizing controls."""
-    # Accept either dir_results dict with "ranges" key or direct ranges dict
-    if isinstance(dir_results, dict) and "ranges" in dir_results:
-        ranges = dir_results["ranges"]
-    else:
-        ranges = dir_results
-
-    fig = plot_polar_ranges({"ranges": ranges}, ax=ax, title=title)
-
-    # Apply font sizing if provided
-    polar_ax = fig.axes[0] if fig.axes else ax
-    if polar_ax is not None:
-        if fontsize is not None:
-            polar_ax.set_title(title, fontsize=fontsize)
-        if labelsize is not None:
-            polar_ax.set_xlabel(polar_ax.get_xlabel(), fontsize=labelsize)
-            polar_ax.set_ylabel(polar_ax.get_ylabel(), fontsize=labelsize)
-        if ticksize is not None:
-            polar_ax.tick_params(axis="both", labelsize=ticksize)
-
-    return fig
+    return plot_polar_ranges(
+        dir_results,
+        ax=ax,
+        title=title,
+        fontsize=fontsize,
+        labelsize=labelsize,
+        ticksize=ticksize,
+    )
 
 
 def plot_pca_clusters(
