@@ -170,6 +170,33 @@ def plot_network_topology(
     return fig, ax
 
 
+# Alias for backwards compatibility and clarity
+def plot_topology_with_critical_buses(
+    net: "pandapowerNet | None",
+    bus_ids: np.ndarray,
+    coords: np.ndarray,
+    critical_mask: np.ndarray | None = None,
+    ax: "Axes | None" = None,
+    title: str | None = "Network topology with critical buses",
+    figsize: tuple[float, float] = (8, 6),
+    show_lines: bool = True,
+) -> tuple["Figure", "Axes"]:
+    """Plot network topology highlighting critical buses.
+
+    This is an alias for plot_network_topology with a clearer name.
+    """
+    return plot_network_topology(
+        net=net,
+        bus_ids=bus_ids,
+        coords=coords,
+        critical_mask=critical_mask,
+        ax=ax,
+        title=title,
+        figsize=figsize,
+        show_lines=show_lines,
+    )
+
+
 def plot_critical_nodes_map(
     bus_ids: np.ndarray,
     coords: np.ndarray,

@@ -153,6 +153,64 @@ def plot_polar_ranges(
     return fig
 
 
+def plot_directional_ranges_polar(
+    ranges: dict[int | float, float],
+    title: str = "Directional ranges (polar)",
+    fontsize: int = 18,
+    ax: "Axes | None" = None,
+    color: str = "steelblue",
+    fill_alpha: float = 0.3,
+) -> "Figure":
+    """Plot directional ranges as a polar diagram with a closed curve and fill.
+
+    Parameters
+    ----------
+    ranges : dict[int | float, float]
+        Mapping from azimuth (degrees) to range value.
+    title : str
+        Plot title.
+    fontsize : int
+        Font size for title.
+    ax : Axes, optional
+        Polar axes to plot on; creates one if not provided.
+    color : str
+        Line and fill color.
+    fill_alpha : float
+        Alpha for the filled region.
+
+    Returns
+    -------
+    Figure
+        Matplotlib figure.
+    """
+    if not ranges:
+        raise ValueError("ranges dict is empty; cannot plot polar diagram.")
+
+    if ax is None:
+        fig = plt.figure(figsize=(6, 6))
+        ax = fig.add_subplot(111, polar=True)
+    else:
+        fig = ax.get_figure()
+
+    # Sort by azimuth for consistent ordering
+    sorted_azimuths = sorted(ranges.keys())
+    angles_rad = np.deg2rad(sorted_azimuths)
+    values = np.array([ranges[az] for az in sorted_azimuths])
+
+    # Close the polygon by appending first point
+    angles_closed = np.append(angles_rad, angles_rad[0])
+    values_closed = np.append(values, values[0])
+
+    ax.plot(angles_closed, values_closed, marker="o", color=color, linewidth=2)
+    ax.fill(angles_closed, values_closed, alpha=fill_alpha, color=color)
+    ax.set_title(title, fontsize=fontsize, pad=15)
+    ax.set_theta_zero_location("E")
+    ax.set_theta_direction(-1)
+    plt.tight_layout()
+
+    return fig
+
+
 def plot_pca_clusters(
     pca_components: np.ndarray,
     cluster_labels: np.ndarray,
