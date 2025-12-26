@@ -1,13 +1,18 @@
+
 # geoloadst
 **Spatial and spatio-temporal load instability analysis for distribution networks**
 
-`geoloadst` is a Python package for analyzing load instability patterns in power distribution networks using SimBench/pandapower. It provides tools for:
+`geoloadst` is a Python package for analyzing **spatial** and **spatio-temporal** load-instability patterns in power distribution networks (with first-class support for **SimBench/pandapower**). It provides an end-to-end workflow centered on a high-level `InstabilityAnalyzer` API, plus modular core functions and visualization helpers.
 
-- **Spatio-temporal variogram analysis** - Quantify spatial and temporal correlation structures in load anomalies
-- **Multi-dimensional instability features** - Extract RMS, rate of change, oscillation metrics with PCA & clustering
-- **Moran's I spatial autocorrelation** - Global and Local Moran (LISA) for hotspot detection
-- **Topological analysis** - Correlate instability with network topology (degree, betweenness centrality)
-- **Scenario modeling** - Industrial day/night load pattern analysis
+It supports:
+- **Spatio-temporal variogram analysis (STV)** — quantify spatial and temporal correlation structures in load anomalies
+- **Directional anisotropy diagnostics** — directional variograms + polar range plots (global) and ellipse overlays (global/local)
+- **Multi-dimensional instability features** — extract RMS, rate-of-change, oscillation metrics with PCA & clustering
+- **Moran’s I spatial autocorrelation** — Global and Local Moran (LISA) for hotspot / outlier detection
+- **Topology-aware analysis** — relate instability to network structure (e.g., degree / betweenness)
+- **Scenario utilities** — operate on load profiles (e.g., industrial day/night patterns) and compare signatures
+
+---
 
 ## Installation
 
@@ -219,23 +224,24 @@ except ImportError as e:
 ```
 geoloadst/
 ├── __init__.py
-├── api.py                  # High-level InstabilityAnalyzer class
+├── api.py                    # High-level InstabilityAnalyzer class
 ├── io/
 │   ├── __init__.py
-│   └── simbench_adapter.py # Network loading, coordinate extraction, load profiles
+│   └── simbench_adapter.py   # Network loading, coordinate extraction, load profiles
 ├── core/
 │   ├── __init__.py
-│   ├── preprocessing.py    # Detrending and standardization
-│   ├── instability_index.py # RMS instability, critical node classification
-│   ├── spatiotemporal.py   # Space-time variogram analysis
+│   ├── preprocessing.py      # Detrending and standardization
+│   ├── instability_index.py  # RMS instability, critical node classification
+│   ├── spatiotemporal.py     # Space-time variogram analysis
 │   ├── multidim_instability.py # Feature extraction, PCA, clustering
-│   ├── moran.py            # Moran's I (global and local)
-│   ├── topology.py         # NetworkX graph metrics
-│   └── resilience.py       # Scenario comparison utilities
+│   ├── moran.py              # Moran's I (global and local)
+│   ├── topology.py           # NetworkX graph metrics
+│   ├── resilience.py         # Resilience/scenario comparison utilities
+│   └── roi.py                # ROI utilities / subnet extraction helpers
 ├── viz/
 │   ├── __init__.py
-│   ├── plots.py            # Histograms, variograms, time series
-│   └── maps.py             # Geospatial maps with GeoPandas
+│   ├── plots.py              # Histograms, variograms, directional/polar plots, PCA plots
+│   └── maps.py               # Network/topology maps, GeoPandas overlays
 ├── scenarios/
 │   ├── __init__.py
 │   └── industrial_daynight.py # Industrial load pattern scenario
@@ -308,21 +314,26 @@ results = apply_industrial_daynight_pattern(
 ```
 
 ## Visualization
+High-level plotting helpers live in geoloadst.viz.plots and geoloadst.viz.maps.
 
 ```python
 from geoloadst.viz.plots import (
     plot_instability_histogram,
-    plot_variogram_marginals,
+    plot_st_marginals,
+    plot_directional_variograms,
     plot_directional_ranges_polar,
-    plot_pca_clusters,
-    plot_moran_timeseries,
 )
+
 from geoloadst.viz.maps import (
     plot_network_topology,
     plot_topology_with_critical_buses,
+    plot_instability_overlay,
     plot_lisa_clusters_map,
-    plot_cluster_map,
+    plot_geopandas_map,
+    plot_sample_critical_with_global_ellipse,
+    plot_local_anisotropic_ellipses,
 )
+
 
 # Plot instability distribution
 plot_instability_histogram(instability_index, quantile=0.9)
