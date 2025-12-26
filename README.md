@@ -136,7 +136,7 @@ plt.show()
 ```
 - Result:
 
-![LISA clusters example](docs/images/ORI.png)
+![LISA clusters example](docs/images/ROI.png)
 
 ### Example 4 — Network + OSM basemap (requires contextily)
 
@@ -225,7 +225,7 @@ plt.show()
 
 - Result:
 
-![LISA clusters example](docs/images/ROI.png)
+![LISA clusters example](docs/images/LISA.png)
 
 ## Memory Notes / RAM Warning
 
