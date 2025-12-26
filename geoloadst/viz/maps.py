@@ -183,26 +183,19 @@ def plot_topology_with_critical_buses(
         raise ValueError("analyzer is required for plot_topology_with_critical_buses.")
 
     net = getattr(analyzer, "net", None)
-    bus_ids = getattr(analyzer, "bus_ids", None)
-    coords = getattr(analyzer, "coords", None)
-    critical_mask = None
-
-    # Try to reuse critical mask from STV if available
-    stv = getattr(analyzer, "_stv_results", None)
-    if stv and "critical_mask" in stv:
-        critical_mask = stv["critical_mask"]
-
-    # If still missing, compute from instability_index (90th percentile)
+    bus_ids = getattr(analyzer, "bus_ids_active", getattr(analyzer, "bus_ids", None))
+    coords = getattr(analyzer, "coords_active", getattr(analyzer, "coords", None))
+    critical_mask = getattr(analyzer, "critical_mask", None)
+    if critical_mask is None:
+        if hasattr(analyzer, "_stv_results") and analyzer._stv_results is not None:
+            critical_mask = analyzer._stv_results.get("critical_mask")
     if critical_mask is None:
         instab = getattr(analyzer, "instability_index", None)
         if instab is not None:
             threshold = np.quantile(instab, 0.9)
             critical_mask = instab >= threshold
 
-    # Validate coordinates and IDs
-    bus_ids, coords, extras = _validate_bus_arrays(
-        bus_ids, coords, {"critical_mask": critical_mask}
-    )
+    bus_ids, coords, extras = _validate_bus_arrays(bus_ids, coords, {"critical_mask": critical_mask})
     critical_mask = extras.get("critical_mask")
 
     if ax is None:
@@ -980,8 +973,7 @@ def plot_sample_critical_with_global_ellipse(
         ax=ax,
     )
 
-    # Derive ellipse parameters from directional results
-    dir_res = getattr(analyzer, "directional_results", None) or {}
+    dir_res = getattr(analyzer, "_directional_results", None) or getattr(analyzer, "directional_results", {}) or {}
     ranges = dir_res.get("ranges", {})
     if ranges:
         az_major = max(ranges, key=ranges.get)
@@ -992,12 +984,16 @@ def plot_sample_critical_with_global_ellipse(
         az_major = az_minor = 0
         a = b = np.nan
 
-    crit_mask = getattr(analyzer, "critical_mask", None)
-    coords = analyzer.coords
-    if crit_mask is not None and np.any(crit_mask):
-        center_idx = np.where(crit_mask)[0][0]
-    else:
-        center_idx = 0
+    crit_ids = getattr(analyzer, "critical_bus_ids", None)
+    crit_indices = getattr(analyzer, "critical_indices", None)
+    if crit_indices is None and crit_ids is not None and hasattr(analyzer, "bus_ids_active"):
+        crit_indices = np.where(np.isin(analyzer.bus_ids_active, crit_ids))[0]
+    if crit_indices is None:
+        crit_mask = getattr(analyzer, "critical_mask", None)
+        if crit_mask is not None and np.any(crit_mask):
+            crit_indices = np.where(crit_mask)[0]
+    center_idx = int(crit_indices[0]) if crit_indices is not None and len(crit_indices) > 0 else 0
+    coords = getattr(analyzer, "coords_active", analyzer.coords)
 
     if not np.isnan(a) and not np.isnan(b):
         x0, y0 = coords[center_idx]
@@ -1072,6 +1068,8 @@ def plot_local_anisotropic_ellipses(
     node_size: float = 15,
     critical_size: float = 80,
     linewidth: float = 0.7,
+    max_crit_local: int = 5,
+    k_local: int = 40,
 ) -> tuple["Figure", "Axes"]:
     """Plot topology with local ellipses for nodes that have local_a/local_b."""
     if analyzer is None:
@@ -1090,6 +1088,43 @@ def plot_local_anisotropic_ellipses(
     local_a = local_res.get("local_a")
     local_b = local_res.get("local_b")
     local_angle = local_res.get("local_angle")
+
+    # Compute local anisotropy if missing
+    if local_a is None or local_b is None or local_angle is None:
+        try:
+            from geoloadst.core.spatiotemporal import compute_local_variograms
+
+            n = len(analyzer.coords_active)
+            local_iso = np.full(n, np.nan)
+            local_a = np.full(n, np.nan)
+            local_b = np.full(n, np.nan)
+            local_angle = np.full(n, np.nan)
+            crit_mask = getattr(analyzer, "critical_mask", None)
+            crit_indices = (
+                np.where(crit_mask)[0] if crit_mask is not None else np.arange(min(max_crit_local, n))
+            )
+            for idx in crit_indices[:max_crit_local]:
+                res_local = compute_local_variograms(
+                    analyzer.coords_active,
+                    analyzer.instability_index,
+                    center_idx=idx,
+                    k_neighbors=k_local,
+                    n_lags=5,
+                    model="spherical",
+                )
+                local_iso[idx] = res_local.get("iso_range", np.nan)
+                local_a[idx] = res_local.get("local_major", np.nan)
+                local_b[idx] = res_local.get("local_minor", np.nan)
+                local_angle[idx] = res_local.get("local_angle", np.nan)
+            analyzer.local_anisotropy_results = {
+                "local_iso": local_iso,
+                "local_a": local_a,
+                "local_b": local_b,
+                "local_angle": local_angle,
+            }
+        except Exception as exc:  # pragma: no cover
+            print(f"[geoloadst] local anisotropy computation skipped: {exc}")
+            local_a = local_b = local_angle = None
 
     if local_a is not None and local_b is not None and local_angle is not None:
         for idx in range(len(analyzer.coords)):

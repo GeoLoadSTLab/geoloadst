@@ -246,6 +246,27 @@ def plot_directional_ranges_polar(
     )
 
 
+def plot_polar_ranges(
+    dir_results: dict[str, Any] | dict[int | float, float],
+    ax: "Axes | None" = None,
+    title: str = "Directional instability radius",
+    fontsize: int | None = None,
+    labelsize: int | None = None,
+    ticksize: int | None = None,
+    color: str = "steelblue",
+    fill_alpha: float = 0.3,
+) -> "Figure":
+    """Alias for backward compatibility; forwards to plot_directional_ranges_polar."""
+    return plot_directional_ranges_polar(
+        dir_results,
+        ax=ax,
+        title=title,
+        fontsize=fontsize,
+        labelsize=labelsize,
+        ticksize=ticksize,
+    )
+
+
 def plot_pca_clusters(
     pca_components: np.ndarray,
     cluster_labels: np.ndarray,

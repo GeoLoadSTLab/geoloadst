@@ -230,24 +230,19 @@ class InstabilityAnalyzer:
 
     def compute_directional_variograms(
         self,
+        azimuths: list[int] | None = None,
         values: np.ndarray | None = None,
         angles_deg: tuple[int, ...] | list[int] | None = (0, 45, 90, 135),
         tolerance_deg: float = 22.5,
         n_lags: int = 8,
         maxlag: float | None = None,
         model: str = "spherical",
-        azimuths: list[int] | None = None,
     ) -> dict[str, Any]:
-        """Directional variograms for anisotropy (backward compatible signature).
-
-        Accepts both the legacy `azimuths` argument and the richer signature
-        with angles, tolerance, n_lags, maxlag, and model.
-        """
+        """Directional variograms for anisotropy; backward-compatible signature."""
         from geoloadst.core.spatiotemporal import compute_directional_variograms
 
-        coords_active = getattr(self, "_active_coords", self.coords)
+        coords_active = getattr(self, "coords_active", self.coords)
 
-        # Handle values
         if values is None:
             if self.instability_index is None:
                 raise ValueError(
@@ -256,15 +251,8 @@ class InstabilityAnalyzer:
                 )
             values = self.instability_index
 
-        # Handle angles: azimuths takes precedence for backward compatibility
-        if azimuths is not None:
-            angles = list(azimuths)
-        elif angles_deg is not None:
-            angles = list(angles_deg)
-        else:
-            angles = [0, 45, 90, 135]
+        angles = list(azimuths) if azimuths is not None else list(angles_deg or [0, 45, 90, 135])
 
-        # Determine maxlag from STV results if not provided
         if maxlag is None and self._stv_results is not None:
             space_range = self._stv_results["stv"]["space_range"]
             if not np.isnan(space_range):
@@ -280,26 +268,12 @@ class InstabilityAnalyzer:
             model=model,
         )
 
-        # Core shape expected by plotting helpers
         result = {
-            "angles_deg": angles,
             "variograms": dir_results.get("variograms", {}),
             "ranges": dir_results.get("ranges", {}),
         }
-        # Preserve legacy keys for compatibility with older callers
-        result.update(
-            {
-                "major_axis_azimuth": dir_results.get("major_azimuth"),
-                "minor_axis_azimuth": dir_results.get("minor_azimuth"),
-                "a": dir_results.get("semi_major", np.nan),
-                "b": dir_results.get("semi_minor", np.nan),
-                "major_azimuth": dir_results.get("major_azimuth"),
-                "minor_azimuth": dir_results.get("minor_azimuth"),
-                "semi_major": dir_results.get("semi_major", np.nan),
-                "semi_minor": dir_results.get("semi_minor", np.nan),
-                "angle": dir_results.get("angle", 0.0),
-            }
-        )
+        # cache for downstream plotting helpers
+        self._directional_results = result
         return result
 
     def run_full_workflow(
