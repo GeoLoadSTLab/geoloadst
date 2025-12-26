@@ -101,34 +101,41 @@ plt.show()
 
 ```python
 import simbench
+import matplotlib.pyplot as plt
+import geopandas as gpd
+from shapely.geometry import Point
+import contextily as ctx
+
 from geoloadst import InstabilityAnalyzer
+from geoloadst.viz.maps import plot_network_topology
+from geoloadst.viz.plots import plot_instability_histogram
 
 # 1) Load network
 net = simbench.get_simbench_net("1-complete_data-mixed-all-1-sw")
 
 # 2) Small ROI + short time window (low RAM)
-analyzer = InstabilityAnalyzer(
-    net,
-    roi=(10.8, 11.7, 53.1, 53.6),
-    time_window=(0, 48),
-    dt_minutes=15.0,
-)
+analyzer = InstabilityAnalyzer(net,roi=(10.8, 11.7, 53.1, 53.6),time_window=(0, 96),dt_minutes=15.0,)
 analyzer.prepare_data()
 
 # 3) Resource-safe instability
 analyzer.compute_spatiotemporal_instability(
-    max_buses=150,
-    max_times=48,
-    max_pairs=50_000,
+        max_buses=200,
+        max_times=48,
+        max_pairs=50_000,
 )
 
 # 4) Moran/LISA 
 moran = analyzer.compute_moran_analysis(k_neighbors=8)
 
-# Print summary
-print(f"Global Moran's I (mean load): {moran['moran_mean_load'].I:.4f}")
-print(f"Top critical buses: {analyzer._stv_results['critical_bus_ids'][:5]}")
+# Plot 1: Instability histogram
+plot_instability_histogram(analyzer.instability_index,quantile=0.9,title="Instability distribution (ROI buses)",)
+plt.show()
+
+plt.tight_layout()
+plt.show()
 ```
+Result:
+![LISA clusters example](docs/images/ORI.png)
 
 ### Example 4 — Network + OSM basemap (requires contextily)
 
@@ -216,6 +223,7 @@ plt.show()
 ```
 
 - Result:
+
 ![LISA clusters example](docs/images/LISA.png)
 
 ## Memory Notes / RAM Warning
