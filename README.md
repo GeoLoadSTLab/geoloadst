@@ -76,64 +76,32 @@ plt.show()
 ### Example 2 — Instability overlay with critical buses (plots)
 
 ```python
-import warnings
-warnings.filterwarnings("ignore")
-import simbench
-import matplotlib.pyplot as plt
+import warnings; warnings.filterwarnings("ignore")
+import simbench, matplotlib.pyplot as plt
 from geoloadst import InstabilityAnalyzer
-try:
-    from geoloadst.viz.plots import plot_st_marginals  # your version
-except ImportError:
-    # fallback for other versions
-    from geoloadst.viz.plots import plot_variogram_marginals as plot_st_marginals
-# global typography (simple + reliable)
-plt.rcParams.update({"axes.titlesize": 20,"axes.labelsize": 16,"xtick.labelsize": 14,"ytick.labelsize": 14,"legend.fontsize": 14,})
-# >>> IMPORTANT: force spatial maxlag here <<<
+try: from geoloadst.viz.plots import plot_st_marginals as P
+except ImportError: from geoloadst.viz.plots import plot_variogram_marginals as P
+from geoloadst.core.spatiotemporal import compute_stv
+
 SPACE_MAXLAG = 0.12
-def recompute_stv_with_fixed_maxlag(analyzer, out, space_maxlag=0.12):
-    """
-    Recompute STV with a fixed spatial maxlag and overwrite analyzer/out results,
-    """
-    from geoloadst.core.spatiotemporal import compute_stv
-    coords = out["coords_used"]
-    values_std = out["values_std"]
-    # match your defaults
-    x_lags = 12
-    t_lags = 8
-    stv_fixed = compute_stv(coords,values_std, dt_minutes=analyzer.dt_minutes,x_lags=x_lags,t_lags=t_lags,maxlag=float(space_maxlag), max_pairs=50_000,random_state=42,)
-    # clamp the reported range too (so dashed line won't show > space_maxlag)
-    if "space_range" in stv_fixed:
-        stv_fixed["space_range"] = min(float(stv_fixed["space_range"]), float(space_maxlag))
-    # keep compatibility with different package versions
-    out["stv"] = stv_fixed
-    if hasattr(analyzer, "_stv_results") and isinstance(analyzer._stv_results, dict):
-        analyzer._stv_results["stv"] = stv_fixed
-    return out
-def main():
-    net = simbench.get_simbench_net("1-complete_data-mixed-all-1-sw")
 
-    analyzer = InstabilityAnalyzer(
-        net,
-        roi=(10.8, 11.7, 53.1, 53.6),
-        time_window=(0, 96),
-        dt_minutes=15.0,
-    )
-    analyzer.prepare_data()
+net = simbench.get_simbench_net("1-complete_data-mixed-all-1-sw")
+a = InstabilityAnalyzer(net, roi=(10.8,11.7,53.1,53.6), time_window=(0,96), dt_minutes=15.0)
+a.prepare_data()
+out = a.compute_spatiotemporal_instability(max_buses=150, max_times=48, max_pairs=50_000)
 
-    out = analyzer.compute_spatiotemporal_instability(
-        max_buses=150,
-        max_times=48,
-        max_pairs=50_000,
-    )
-    # >>> Fix STV (spatial lag stops at 0.12, range clamped) <<<
-    out = recompute_stv_with_fixed_maxlag(analyzer, out, space_maxlag=SPACE_MAXLAG)
-    # (1) Spatial & temporal marginal variograms
-    fig, axs = plt.subplots(1, 2, figsize=(13, 5))
-    plot_st_marginals(out["stv"]["Vx"],out["stv"]["Vt"], out["stv"]["space_range"], out["stv"]["time_range_steps"],out["stv"]["time_range_hours"],ax=axs,title="Spatial & temporal marginal variograms",)
-    plt.tight_layout()
-    plt.show()
-if __name__ == "__main__":
-    main()
+stv = compute_stv(out["coords_used"], out["values_std"], dt_minutes=a.dt_minutes,
+                  x_lags=12, t_lags=8, maxlag=float(SPACE_MAXLAG),
+                  max_pairs=50_000, random_state=42)
+if "space_range" in stv: stv["space_range"] = min(float(stv["space_range"]), float(SPACE_MAXLAG))
+out["stv"] = stv
+if isinstance(getattr(a, "_stv_results", None), dict): a._stv_results["stv"] = stv
+
+fig, ax = plt.subplots(1,2, figsize=(13,5))
+P(stv["Vx"], stv["Vt"], stv["space_range"], stv["time_range_steps"], stv["time_range_hours"],
+  ax=ax, title="Spatial & temporal marginal variograms")
+plt.tight_layout(); plt.show()
+
 ```
 - Result:
 
@@ -178,67 +146,34 @@ plt.show()
 > **Note**: This example requires optional dependencies: `pip install geopandas shapely contextily`
 
 ```python
-import simbench
-import matplotlib.pyplot as plt
-import geopandas as gpd
+import warnings; warnings.filterwarnings("ignore")
+import numpy as np, simbench, matplotlib.pyplot as plt, geopandas as gpd, contextily as ctx
 from shapely.geometry import Point
-import contextily as ctx
 from geoloadst import InstabilityAnalyzer
 from geoloadst.viz.maps import plot_network_topology, plot_lisa_clusters_map
-from geoloadst.viz.plots import plot_instability_histogram
-# 1) Load network
+
 net = simbench.get_simbench_net("1-complete_data-mixed-all-1-sw")
-# 2) Small ROI + short time window (low RAM)
-analyzer = InstabilityAnalyzer(net,roi=(10.8, 11.7, 53.1, 53.6),time_window=(0, 96),dt_minutes=15.0,)
-analyzer.prepare_data()
-# 3) Resource-safe instability
-analyzer.compute_spatiotemporal_instability(
-        max_buses=200,
-        max_times=48,
-        max_pairs=50_000,
-)
-# 4) Moran/LISA 
-moran = analyzer.compute_moran_analysis(k_neighbors=8)
-# Plot 1: Instability histogram
-plot_instability_histogram(analyzer.instability_index,quantile=0.9,title="Instability distribution (ROI buses)",)
-plt.show()
-# Plot 2: Network + Basemap + LISA overlay
-gdf = gpd.GeoDataFrame(
-    {"bus_id": analyzer.bus_ids},
-    geometry=[Point(xy) for xy in analyzer.coords],
-    crs="EPSG:4326",
-)
-gdf_3857 = gdf.to_crs(epsg=3857)
-coords_3857 = (
-    gdf_3857.geometry.x.to_numpy(),
-    gdf_3857.geometry.y.to_numpy(),
-)
-coords_3857 = list(zip(coords_3857[0], coords_3857[1]))  
-import numpy as np
-coords_3857 = np.asarray(coords_3857)
+a = InstabilityAnalyzer(net, roi=(10.8, 11.7, 53.1, 53.6), time_window=(0, 96), dt_minutes=15.0)
+a.prepare_data()
+
+a.compute_spatiotemporal_instability(max_buses=200, max_times=48, max_pairs=50_000)
+clusters = a.compute_moran_analysis(k_neighbors=8)["clusters_mean_load"]
+
+g = gpd.GeoDataFrame(geometry=[Point(xy) for xy in a.coords], crs="EPSG:4326").to_crs(3857)
+xy = np.c_[g.geometry.x.to_numpy(), g.geometry.y.to_numpy()]
+
 fig, ax = plt.subplots(figsize=(12, 8))
-# 1) Basemap
-xmin, ymin, xmax, ymax = gdf_3857.total_bounds
-padx = (xmax - xmin) * 0.05
-pady = (ymax - ymin) * 0.05
-ax.set_xlim(xmin - padx, xmax + padx)
-ax.set_ylim(ymin - pady, ymax + pady)
-ctx.add_basemap(
-    ax,
-    source=ctx.providers.OpenStreetMap.Mapnik,
-    zoom="auto",
-)
-# 2)  (Topology)  basemap
-plot_network_topology(net=net,bus_ids=analyzer.bus_ids,coords=coords_3857,ax=ax,title="Network (ROI) + LISA clusters (Mean Load) + OSM",)
-# 3) LISA clusters overlay 
-plot_lisa_clusters_map(analyzer.bus_ids,coords_3857,moran["clusters_mean_load"],net=None,ax=ax,title=None,show_lines=False,)
-# 4) Legend 
-handles, labels = ax.get_legend_handles_labels()
-if handles:
-    ax.legend(handles, labels, title="LISA cluster",fontsize=14,title_fontsize=15,markerscale=1.8,framealpha=1,loc="upper right",)
-ax.set_axis_off()
-plt.tight_layout()
-plt.show()
+ax.set_title("Network (ROI) + LISA clusters (Mean Load) + OSM")
+xmin, ymin, xmax, ymax = g.total_bounds; px, py = (xmax-xmin)*.05, (ymax-ymin)*.05
+ax.set_xlim(xmin-px, xmax+px); ax.set_ylim(ymin-py, ymax+py)
+ctx.add_basemap(ax, source=ctx.providers.OpenStreetMap.Mapnik, zoom="auto")
+
+plot_network_topology(net=net, bus_ids=a.bus_ids, coords=xy, ax=ax, title=None)
+plot_lisa_clusters_map(a.bus_ids, xy, clusters, net=None, ax=ax, title=None, show_lines=False)
+
+h, l = ax.get_legend_handles_labels()
+if h: ax.legend(h, l, title="LISA cluster", loc="upper right", framealpha=1)
+ax.set_axis_off(); plt.tight_layout(); plt.show()
 ```
 
 - Result:
